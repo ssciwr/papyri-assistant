@@ -1,0 +1,40 @@
+name: papyri-dev
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: dev
+    environment:
+      BACKEND_PORT: "3001"
+      BACKEND_RELOAD: "1"
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_API_URL: ${LLM_API_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      PYTHONPATH: /app/backend/src
+    volumes:
+      - ./backend/src:/app/backend/src
+    ports:
+      - "127.0.0.1:3001:3001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3001/health', timeout=2).read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      target: dev
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
+    volumes:
+      - ./frontend:/app/frontend
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      backend:
+        condition: service_healthy

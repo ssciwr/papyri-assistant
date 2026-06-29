@@ -1,0 +1,31 @@
+{
+  "description": "Minimal monorepo scaffold with an assistant-ui chat frontend and LangChain backend.",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "name": "assistant-ui-langchain-chat",
+  "private": true,
+  "scripts": {
+    "backend:install": "python -m pip install -e backend",
+    "build": "npm run build:backend && npm run build -w frontend",
+    "build:backend": "python -m compileall -q backend/src",
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "PYTHONPATH=backend/src BACKEND_RELOAD=1 python -m papyri_backend",
+    "dev:frontend": "npm run dev -w frontend",
+    "docker:dev": "docker compose up --build",
+    "docker:dev:down": "docker compose down",
+    "docker:down": "docker compose down",
+    "docker:prod": "docker compose -f compose.prod.yaml up --build -d",
+    "docker:prod:down": "docker compose -f compose.prod.yaml down",
+    "docker:up": "docker compose up --build",
+    "typecheck": "npm run typecheck:backend && npm run typecheck -w frontend",
+    "typecheck:backend": "python -m compileall -q backend/src"
+  },
+  "version": "0.1.0",
+  "workspaces": [
+    "frontend"
+  ]
+}
