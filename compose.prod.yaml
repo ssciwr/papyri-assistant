@@ -27,6 +27,7 @@ services:
       target: runtime
       args:
         VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_WARNING_BANNER_TEXT: ${VITE_WARNING_BANNER_TEXT:-}
     ports:
       - "${FRONTEND_PORT:-80}:80"
     restart: unless-stopped

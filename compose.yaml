@@ -31,6 +31,7 @@ services:
       target: dev
     environment:
       VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
+      VITE_WARNING_BANNER_TEXT: ${VITE_WARNING_BANNER_TEXT:-}
     volumes:
       - ./frontend:/app/frontend
     ports:

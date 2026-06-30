@@ -17,7 +17,9 @@ CMD ["npm", "run", "dev", "-w", "frontend", "--", "--host", "0.0.0.0"]
 FROM deps AS build
 
 ARG VITE_API_URL=http://localhost:3001
+ARG VITE_WARNING_BANNER_TEXT=
 ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_WARNING_BANNER_TEXT=$VITE_WARNING_BANNER_TEXT
 
 COPY frontend ./frontend
 RUN npm run build -w frontend
