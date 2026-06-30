@@ -7,7 +7,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   ComposerPrimitive,
-  MessagePartPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
   type ReasoningMessagePartComponent,
@@ -15,6 +14,10 @@ import {
 } from "@assistant-ui/react";
 
 type MarkdownContentProps = ComponentPropsWithoutRef<"div">;
+type ThinkSegment = {
+  type: "text" | "reasoning";
+  text: string;
+};
 
 const MarkdownContent = forwardRef<HTMLDivElement, MarkdownContentProps>(
   ({ children, className, ...props }, ref) => {
@@ -35,23 +38,88 @@ const MarkdownContent = forwardRef<HTMLDivElement, MarkdownContentProps>(
 
 MarkdownContent.displayName = "MarkdownContent";
 
-const MarkdownText: TextMessagePartComponent = () => (
+function findThinkTag(
+  text: string,
+  startIndex: number,
+  closing: boolean
+): RegExpExecArray | null {
+  const tagPattern = closing ? /<\/\s*think\s*>/gi : /<\s*think\s*>/gi;
+  tagPattern.lastIndex = startIndex;
+  return tagPattern.exec(text);
+}
+
+function splitThinkTags(text: string): ThinkSegment[] {
+  const segments: ThinkSegment[] = [];
+  let index = 0;
+
+  while (index < text.length) {
+    const openTag = findThinkTag(text, index, false);
+
+    if (!openTag) {
+      segments.push({ type: "text", text: text.slice(index) });
+      break;
+    }
+
+    if (openTag.index > index) {
+      segments.push({ type: "text", text: text.slice(index, openTag.index) });
+    }
+
+    const reasoningStart = openTag.index + openTag[0].length;
+    const closeTag = findThinkTag(text, reasoningStart, true);
+
+    if (!closeTag) {
+      segments.push({ type: "reasoning", text: text.slice(reasoningStart) });
+      break;
+    }
+
+    segments.push({
+      type: "reasoning",
+      text: text.slice(reasoningStart, closeTag.index)
+    });
+    index = closeTag.index + closeTag[0].length;
+  }
+
+  return segments.filter((segment) => segment.text.trim().length > 0);
+}
+
+function StreamingIndicator() {
+  return <span className="message-streaming-indicator">●</span>;
+}
+
+function FoldedReasoning({ text }: { text: string }) {
+  if (!text.trim()) {
+    return null;
+  }
+
+  return (
+    <details className="reasoning-output">
+      <summary className="reasoning-summary">Reasoning</summary>
+      <div className="reasoning-content">
+        <MarkdownContent>{text}</MarkdownContent>
+      </div>
+    </details>
+  );
+}
+
+const MarkdownText: TextMessagePartComponent = ({ text, status }) => (
   <div className="message-part message-part-text">
-    <MessagePartPrimitive.Text component={MarkdownContent} />
-    <MessagePartPrimitive.InProgress>
-      <span className="message-streaming-indicator">●</span>
-    </MessagePartPrimitive.InProgress>
+    {splitThinkTags(text).map((segment, index) =>
+      segment.type === "reasoning" ? (
+        <FoldedReasoning key={`reasoning-${index}`} text={segment.text} />
+      ) : (
+        <MarkdownContent key={`text-${index}`}>{segment.text}</MarkdownContent>
+      )
+    )}
+    {status.type === "running" && <StreamingIndicator />}
   </div>
 );
 
-const ReasoningOutput: ReasoningMessagePartComponent = () => (
+const ReasoningOutput: ReasoningMessagePartComponent = ({ text, status }) => (
   <details className="reasoning-output">
     <summary className="reasoning-summary">Reasoning</summary>
     <div className="reasoning-content">
-      <MessagePartPrimitive.Text component={MarkdownContent} />
-      <MessagePartPrimitive.InProgress>
-        <span className="message-streaming-indicator">●</span>
-      </MessagePartPrimitive.InProgress>
+      <MarkdownContent>{text}</MarkdownContent>
+      {status.type === "running" && <StreamingIndicator />}
     </div>
   </details>
 );
