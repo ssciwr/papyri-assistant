@@ -16,8 +16,17 @@ dependencies = [
   "uvicorn[standard]>=0.35.0"
 ]
 
+[project.optional-dependencies]
+tests = [
+  "pytest>=8.0"
+]
+
 [project.scripts]
 papyri-backend = "papyri_backend.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
