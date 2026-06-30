@@ -54,6 +54,16 @@ function splitThinkTags(text: string): ThinkSegment[] {
 
   while (index < text.length) {
     const openTag = findThinkTag(text, index, false);
+    const closeTag = findThinkTag(text, index, true);
+
+    if (closeTag && (!openTag || closeTag.index < openTag.index)) {
+      segments.push({
+        type: "reasoning",
+        text: text.slice(index, closeTag.index)
+      });
+      index = closeTag.index + closeTag[0].length;
+      continue;
+    }
 
     if (!openTag) {
       segments.push({ type: "text", text: text.slice(index) });
@@ -65,18 +75,18 @@ function splitThinkTags(text: string): ThinkSegment[] {
     }
 
     const reasoningStart = openTag.index + openTag[0].length;
-    const closeTag = findThinkTag(text, reasoningStart, true);
+    const matchingCloseTag = findThinkTag(text, reasoningStart, true);
 
-    if (!closeTag) {
+    if (!matchingCloseTag) {
       segments.push({ type: "reasoning", text: text.slice(reasoningStart) });
       break;
     }
 
     segments.push({
       type: "reasoning",
-      text: text.slice(reasoningStart, closeTag.index)
+      text: text.slice(reasoningStart, matchingCloseTag.index)
     });
-    index = closeTag.index + closeTag[0].length;
+    index = matchingCloseTag.index + matchingCloseTag[0].length;
   }
 
   return segments.filter((segment) => segment.text.trim().length > 0);
