@@ -1,0 +1,34 @@
+name: User Story
+description: Use this to describe an intended interaction with the chatbot
+title: "[User Story] "
+labels:
+  - "user-story"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The idea of user stories for the papyri-assistant project is that we collect
+        a number of representative user interactions with the chatbot, that we can use
+        to derive technical requirements.
+
+  - type: textarea
+    id: prompt
+    attributes:
+      label: "Initial prompt"
+      description: "The initial prompt that you would enter into the chatbot"
+      placeholder: |
+        Write excatly what you would write into the chatbot
+
+  - type: textarea
+    id: data-sources
+    attributes:
+      label: "Data sources"
+      description: "Papyrological data sources that the answer should ideally be informed by"
+      placeholder: |
+        A list of data sources.
+
+  - type: textarea
+    id: expectation
+    attributes:
+      label: "Expectations on the output"
+      description: "Please describe a potential answer in terms of content."
