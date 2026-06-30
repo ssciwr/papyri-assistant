@@ -2,10 +2,15 @@ import type { ReactNode } from "react";
 import {
   AssistantRuntimeProvider,
   useLocalRuntime,
-  type ChatModelAdapter
+  type ChatModelAdapter,
+  type ThreadAssistantMessagePart
 } from "@assistant-ui/react";
 
 const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+type ChatResponse = {
+  text: string;
+  reasoning?: string;
+};
 
 const modelAdapter: ChatModelAdapter = {
   async run({ messages, abortSignal }) {
@@ -23,14 +28,23 @@ const modelAdapter: ChatModelAdapter = {
       throw new Error(errorText || `Request failed with ${response.status}`);
     }
 
-    const data = (await response.json()) as { text: string };
+    const data = (await response.json()) as ChatResponse;
+    const content: ThreadAssistantMessagePart[] = [];
+
+    if (data.reasoning?.trim()) {
+      content.push({
+        type: "reasoning",
+        text: data.reasoning
+      });
+    }
+
+    content.push({
+      type: "text",
+      text: data.text
+    });
+
     return {
-      content: [
-        {
-          type: "text",
-          text: data.text
-        }
-      ]
+      content
     };
   }
 };
