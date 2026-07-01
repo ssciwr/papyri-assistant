@@ -1,4 +1,5 @@
 import { RuntimeProvider } from "./assistantRuntime";
+import { ChatExportButton } from "./components/ChatExportButton";
 import { ChatThread } from "./components/ChatThread";
 
 const warningBannerText =
@@ -24,7 +25,10 @@ export function App() {
               <h1>Papyri Assistant</h1>
               <p>assistant-ui frontend with a LangChain backend</p>
             </div>
-            <span className="status-pill">Local</span>
+            <div className="chat-header-actions">
+              <ChatExportButton />
+              <span className="status-pill">Local</span>
+            </div>
           </header>
           {warningBannerText && (
             <div className="warning-banner" role="alert">
