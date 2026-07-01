@@ -11,7 +11,12 @@ __pycache__/
 *.pyc
 *.log
 .DS_Store
+*.key
+*.pem
+*.p7b
 
+# Certificates
+certs
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

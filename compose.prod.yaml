@@ -26,11 +26,23 @@ services:
       dockerfile: frontend/Dockerfile
       target: runtime
       args:
-        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_API_URL: ${PROD_VITE_API_URL:-/api}
         VITE_WARNING_BANNER_TEXT: ${VITE_WARNING_BANNER_TEXT:-}
     ports:
-      - "${FRONTEND_PORT:-80}:80"
+      - "${FRONTEND_HTTP_PORT:-${FRONTEND_PORT:-80}}:80"
+      - "${FRONTEND_HTTPS_PORT:-443}:443"
+    secrets:
+      - source: tls_certificate
+        target: /etc/nginx/tls/tls.pem
+      - source: tls_private_key
+        target: /etc/nginx/tls/tls.key
     restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
+
+secrets:
+  tls_certificate:
+    file: ${TLS_CERTIFICATE_PATH:-./certs/tls.pem}
+  tls_private_key:
+    file: ${TLS_PRIVATE_KEY_PATH:-./certs/tls.key}
