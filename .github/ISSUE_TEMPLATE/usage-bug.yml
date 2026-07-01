@@ -1,0 +1,28 @@
+name: Usage Bug
+description: Use this to describe an interaction that did not match your expectations
+title: "[Usage Bug] "
+labels:
+  - "user-interaction"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        As you use the system, you might encounter interactions that do not meet your
+        expectations. It is important for us to get an understanding of these interactions.
+        Sometimes, you might be hitting limitations of LLMs in general, sometimes of the
+        used model, but sometimes you would reveal shortcomings of our RAF pipeline that
+        we can investigate and use to improve the system.
+
+  - type: textarea
+    id: log
+    attributes:
+      label: "Chat interaction log"
+      description: "Please paste the full markdown file as stored by the Download button in the UI"
+      placeholder: |
+        Paste exactly the content of the downloaded log file.
+
+  - type: textarea
+    id: expectation
+    attributes:
+      label: "Expectations on the output"
+      description: "Please describe what you have been expecting and how the current result differs from that."
