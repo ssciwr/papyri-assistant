@@ -27,7 +27,7 @@ RUN npm run build -w frontend
 FROM nginx:1.27-alpine AS runtime
 
 RUN mkdir -p /etc/nginx/tls
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
 
 EXPOSE 80 443

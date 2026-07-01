@@ -38,5 +38,5 @@ Put the TLS certificate chain and private key somewhere outside git, then set `T
 If your provider gave you a `.p7b` bundle for the chain, nginx still needs PEM files. Convert the bundle with `openssl pkcs7 -print_certs -in your-bundle.p7b -out chain.pem` and add `-inform DER` if your bundle is DER encoded. Then concatenate your server certificate PEM first and `chain.pem` after it into the file referenced by `TLS_CERTIFICATE_PATH`.
 
 - Frontend: https://localhost by default, or `https://localhost:$FRONTEND_HTTPS_PORT` when `FRONTEND_HTTPS_PORT` is set
-- HTTP port 80 redirects to HTTPS by default, or use `FRONTEND_HTTP_PORT` to change the published redirect port
+- HTTP port 80 redirects to HTTPS by default, or use `FRONTEND_HTTP_PORT` and `FRONTEND_HTTPS_PORT` to change the published ports
 - Backend: private compose network service at `backend:3001`

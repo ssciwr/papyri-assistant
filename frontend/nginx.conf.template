@@ -1,8 +1,13 @@
+map ${FRONTEND_HTTPS_PORT} $https_redirect_port {
+  443 "";
+  default ":${FRONTEND_HTTPS_PORT}";
+}
+
 server {
   listen 80;
   server_name _;
 
-  return 301 https://$host$request_uri;
+  return 301 https://$host$https_redirect_port$request_uri;
 }
 
 server {
