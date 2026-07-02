@@ -11,11 +11,16 @@ body:
         a number of representative user interactions with the chatbot, that we can use
         to derive technical requirements.
 
-  - type: textarea
+  - type: dropdown
     id: role
     attributes:
       label: "User role"
       description: "What is the role of the person using this system?"
+      options:
+        - "Papyrology Expert"
+        - "Related Subject Expert (Greek, Religion, etc.)"
+        - "Student"
+        - "General Public"
 
   - type: textarea
     id: prompt
