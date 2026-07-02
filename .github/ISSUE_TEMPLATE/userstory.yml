@@ -12,6 +12,12 @@ body:
         to derive technical requirements.
 
   - type: textarea
+    id: role
+    attributes:
+      label: "User role"
+      description: "What is the role of the person using this system?"
+
+  - type: textarea
     id: prompt
     attributes:
       label: "Initial prompt"
