@@ -1,3 +1,4 @@
+import { MarkGithubIcon } from "@primer/octicons-react";
 import { RuntimeProvider } from "./assistantRuntime";
 import { ChatExportButton } from "./components/ChatExportButton";
 import { ChatThread } from "./components/ChatThread";
@@ -28,6 +29,16 @@ export function App() {
             <div className="chat-header-actions">
               <ChatExportButton />
               <span className="status-pill">Local</span>
+              <a
+                className="github-issues-link"
+                href="https://github.com/ssciwr/papyri-assistant/issues"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Open GitHub issues"
+                title="GitHub issues"
+              >
+                <MarkGithubIcon aria-hidden="true" />
+              </a>
             </div>
           </header>
           {warningBannerText && (

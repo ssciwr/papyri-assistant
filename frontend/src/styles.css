@@ -77,7 +77,8 @@ textarea {
   gap: 10px;
 }
 
-.export-button {
+.export-button,
+.github-issues-link {
   width: 38px;
   height: 38px;
   display: inline-grid;
@@ -88,17 +89,26 @@ textarea {
   color: #475467;
   background: #ffffff;
   cursor: pointer;
+  text-decoration: none;
 }
 
-.export-button:hover:not(:disabled) {
+.export-button:hover:not(:disabled),
+.github-issues-link:hover {
   border-color: #b7a58b;
   color: #1f2937;
   background: #f7f4ed;
 }
 
-.export-button:focus-visible {
+.export-button:focus-visible,
+.github-issues-link:focus-visible {
   outline: 3px solid rgba(180, 83, 42, 0.25);
   outline-offset: 2px;
+}
+
+.github-issues-link svg {
+  width: 20px;
+  height: 20px;
+  display: block;
 }
 
 .export-button:disabled {
