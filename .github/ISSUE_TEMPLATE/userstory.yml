@@ -21,6 +21,7 @@ body:
         - "Related Subject Expert (Greek, Religion, etc.)"
         - "Student"
         - "General Public"
+      default: 0
 
   - type: textarea
     id: prompt
