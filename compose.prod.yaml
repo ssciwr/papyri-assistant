@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
 
   scrapyrus:
-    build: ./scrapyrus
+    build: ./docker/scrapyrus
     profiles:
       - tools
     depends_on:
@@ -31,8 +31,6 @@ services:
     tty: true
     working_dir: /workspace
     command: sleep infinity
-    volumes:
-      - ./scrapyrus:/workspace
 
   backend:
     build:

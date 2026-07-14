@@ -32,9 +32,18 @@ docker compose run --build --rm scrapyrus scrapyrus metadata ingest
 docker compose run --build --rm scrapyrus scrapyrus transcriptions ingest
 ```
 
-The local `./scrapyrus` directory is mounted at `/workspace`, including an
-optional `idp.data` checkout. Embedding ingestion can reach a service running
-on the Docker host through `host.docker.internal`.
+The management image installs Scrapyrus from PyPI and does not depend on a
+local Scrapyrus checkout. Mount ingestion data into a one-off container when
+needed, for example:
+
+```sh
+docker compose run --build --rm \
+  -v /path/to/idp.data:/data/idp.data:ro \
+  scrapyrus scrapyrus --idp-data /data/idp.data metadata ingest
+```
+
+Embedding ingestion can reach a service running on the Docker host through
+`host.docker.internal`.
 
 ## Run Production Compose
 
