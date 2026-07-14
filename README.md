@@ -23,6 +23,19 @@ Set `VITE_WARNING_BANNER_TEXT` to show a warning banner above the chat, or leave
 
 This uses `compose.yaml`, which runs Vite and the Python backend with source bind mounts for local development.
 
+The stack also starts a pgvector-enabled PostgreSQL database for Scrapyrus. The
+Scrapyrus management image is available as a one-off tool container and is not
+started by the regular `up` command. Run ingestion commands with:
+
+```sh
+docker compose run --build --rm scrapyrus scrapyrus metadata ingest
+docker compose run --build --rm scrapyrus scrapyrus transcriptions ingest
+```
+
+The local `./scrapyrus` directory is mounted at `/workspace`, including an
+optional `idp.data` checkout. Embedding ingestion can reach a service running
+on the Docker host through `host.docker.internal`.
+
 ## Run Production Compose
 
 ```sh
@@ -40,3 +53,10 @@ If your provider gave you a `.p7b` bundle for the chain, nginx still needs PEM f
 - Frontend: https://localhost by default, or `https://localhost:$FRONTEND_HTTPS_PORT` when `FRONTEND_HTTPS_PORT` is set
 - HTTP port 80 redirects to HTTPS by default, or use `FRONTEND_HTTP_PORT` and `FRONTEND_HTTPS_PORT` to change the published ports
 - Backend: private compose network service at `backend:3001`
+
+The production Compose setup has the same PostgreSQL and Scrapyrus management
+services. Prefix the ingestion command with the production Compose file:
+
+```sh
+docker compose -f compose.prod.yaml run --build --rm scrapyrus scrapyrus metadata ingest
+```
