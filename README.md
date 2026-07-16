@@ -24,7 +24,10 @@ Set `VITE_WARNING_BANNER_TEXT` to show a warning banner above the chat, or leave
 This uses `compose.yaml`, which runs Vite and the Python backend with source bind mounts for local development.
 
 The stack also starts a pgvector-enabled PostgreSQL database for Scrapyrus. The
-Scrapyrus management image is available as a one-off tool container and is not
+database files are stored in `./data/postgres` by default. Set
+`POSTGRES_DATA_DIR` in `.env` to use a different host directory.
+
+The Scrapyrus management image is available as a one-off tool container and is not
 started by the regular `up` command. Run ingestion commands with:
 
 ```sh
