@@ -7,6 +7,10 @@
 - Node.js 20.19 or newer
 - Python 3.10 or newer
 - Access to an OpenAI compatible LLM inference serverA provider API key, API URL, and chat model for the LangChain chat model
+- Pi AI agent installation with extensions pi-mcp, and pi-subagents if agentic capabilities should be desired.
+
+## Installation and configuration of the Pi Agent
+TODO: write how to install with sh, npm...
 
 ## Run With Docker Compose
 
