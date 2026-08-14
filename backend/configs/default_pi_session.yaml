@@ -1,0 +1,13 @@
+options:
+  - "--mode"
+  - "rpc"
+  - "--no-session"
+  - "--no-skills"
+  - "--no-prompt-templates"
+  - "--no-context-files"
+  - "--tools"
+  - "read, web_search"
+subprocess_kwargs:
+  stdin: subprocess.PIPE,
+  stdout: subprocess.PIPE,
+  text: True,
