@@ -97,16 +97,18 @@ class PiConnector(AgentConnectorBase):
         ).rstrip()
         return [formatted]
 
-    def _process_history(self, message):
+    def _process_history(self, message: dict[str, Any]):
+        """print out conversation history in current session"""
         processed_list = []
         for history_message in message["messages"]:
-            formatted = yaml.safe_dump(
-                history_message,
-                sort_keys=False,
-                default_flow_style=False,
-                width=120,
-            ).rstrip()
-            processed_list.append(formatted)
+            contentlist = history_message["content"]
+            for content in contentlist:
+                if content["type"] == "text":
+                    color = USER_COLOR
+                    if history_message["role"] == "assistant":
+                        color = ASSISTANT_COLOR
+                    formatted = f">> {color}{content['text']}"
+                    processed_list.append(formatted)
         return processed_list
 
     def _process_models(self, message):
@@ -147,7 +149,6 @@ class PiConnector(AgentConnectorBase):
             split_command = normalized.split(" ")
             if len(split_command) > 1:
                 print(split_command)
-                pass
 
             return raw_command
         else:
@@ -169,23 +170,22 @@ class PiConnector(AgentConnectorBase):
         )  # TODO: this needs auto-detect for different types
 
         for event in self._read_events():
-            print("type: ", event.get("type"))
             if event.get("type") == "response":
                 if event.get("success"):
-                    print(f"{SYSTEM_COLOR}{event.get('command')}", flush=True)
-                    result = self.response_processors[event.get("command")](
-                        event.get("data")
-                    )
-
-                    if isinstance(result, Sequence):
-                        for res in result:
-                            print(f"{SYSTEM_COLOR}{res}", flush=True)
-                            print("\n")
+                    if event.get("command") == "prompt":
+                        continue
                     else:
-                        print(f"{SYSTEM_COLOR}{result}")
+                        result = self.response_processors[event.get("command")](
+                            event.get("data")
+                        )
 
-                    # if event.get("command") != "prompt":
-                    break
+                        if isinstance(result, Sequence):
+                            for res in result:
+                                print(f"{SYSTEM_COLOR}{res}", flush=True)
+                                print("\n")
+                        else:
+                            print(f"{SYSTEM_COLOR}{result}")
+                        break  # no further messages after the response to a command
                 else:
                     print(f"{SYSTEM_COLOR}Error, command {event.get('command')} failed")
 
