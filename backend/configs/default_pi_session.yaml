@@ -1,4 +1,4 @@
-options:
+options: # TODO: add skills and stuff that would be useful
   - "--mode"
   - "rpc"
   - "--no-session"
@@ -6,8 +6,9 @@ options:
   - "--no-prompt-templates"
   - "--no-context-files"
   - "--tools"
-  - "read, web_search"
+  - "read, web_search" # TODO: add mcp tools here
 subprocess_kwargs:
-  stdin: subprocess.PIPE,
+  stdin: subprocess.PIPE, # TODO: is this correct?
   stdout: subprocess.PIPE,
   text: True,
+system_prompt: "You are a concise, helpful assistant" # TODO
