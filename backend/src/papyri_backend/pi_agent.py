@@ -14,26 +14,64 @@ RESET = "\033[0m"
 
 
 class AgentConnectorBase:
-    def __init__(
-        self,
-        options_to_pass: list[str],
-        subprocess_kwargs: dict[str, Any] | None = None,
-    ): ...
+    """Define the interface for connectors that communicate with AI agents."""
 
-    @classmethod
-    def from_config(cls, config: dict[str, Any]) -> "AgentConnectorBase": ...
-
-    def chat(self, raw_message: str): ...
-
-    def teardown(self) -> int: ...
-
-
-class PiConnector(AgentConnectorBase):
     def __init__(
         self,
         options_to_pass: list[str],
         subprocess_kwargs: dict[str, Any] | None = None,
     ):
+        """Initialize a connector with agent command-line options.
+
+        Args:
+            options_to_pass: Command-line options passed to the agent process.
+            subprocess_kwargs: Optional keyword arguments for creating the process.
+        """
+        ...
+
+    @classmethod
+    def from_config(cls, config: dict[str, Any]) -> "AgentConnectorBase":
+        """Create a connector from its configuration mapping.
+
+        Args:
+            config: Connector configuration values.
+
+        Returns:
+            A configured connector instance.
+        """
+        ...
+
+    def chat(self, raw_message: str):
+        """Send a message to the agent and display its response.
+
+        Args:
+            raw_message: The user message to send.
+        """
+        ...
+
+    def teardown(self) -> int:
+        """Stop the underlying agent process.
+
+        Returns:
+            The process exit code.
+        """
+        ...
+
+
+class PiConnector(AgentConnectorBase):
+    """Connect to a Pi agent running in RPC mode."""
+
+    def __init__(
+        self,
+        options_to_pass: list[str],
+        subprocess_kwargs: dict[str, Any] | None = None,
+    ):
+        """Start a Pi RPC subprocess.
+
+        Args:
+            options_to_pass: Command-line options passed to the ``pi`` command.
+            subprocess_kwargs: Optional keyword arguments for ``subprocess.Popen``.
+        """
         self.proc = subprocess.Popen(
             [
                 "pi",
@@ -84,11 +122,27 @@ class PiConnector(AgentConnectorBase):
         super().__init__(options_to_pass, subprocess_kwargs)
 
     def _process_new(self, message):
+        """Format a new-session command response.
+
+        Args:
+            message: Response payload returned by Pi.
+
+        Returns:
+            A one-item list describing whether session creation succeeded.
+        """
         if message["cancelled"]:
             return ["new session cancelled"]
         return ["new session started"]
 
     def _process_state(self, message):
+        """Format the current Pi session state as YAML.
+
+        Args:
+            message: State payload returned by Pi.
+
+        Returns:
+            A one-item list containing formatted YAML.
+        """
         formatted = yaml.safe_dump(
             message,
             sort_keys=False,
@@ -98,7 +152,14 @@ class PiConnector(AgentConnectorBase):
         return [formatted]
 
     def _process_history(self, message: dict[str, Any]):
-        """print out conversation history in current session"""
+        """Format text messages from the current session history.
+
+        Args:
+            message: History payload returned by Pi.
+
+        Returns:
+            Formatted text entries, colorized by message role.
+        """
         processed_list = []
         for history_message in message["messages"]:
             contentlist = history_message["content"]
@@ -112,6 +173,14 @@ class PiConnector(AgentConnectorBase):
         return processed_list
 
     def _process_models(self, message):
+        """Format the available Pi models as YAML.
+
+        Args:
+            message: Models payload returned by Pi.
+
+        Returns:
+            A formatted YAML entry for each available model.
+        """
         processed_list = []
         for model in message["models"]:
             formatted = yaml.safe_dump(
@@ -124,11 +193,28 @@ class PiConnector(AgentConnectorBase):
         return processed_list
 
     def _process_thinking(self, message):
+        """Format a thinking-level command response.
+
+        Args:
+            message: Response payload returned by Pi.
+
+        Returns:
+            A confirmation message for the configured thinking level.
+        """
         # A successful set_thinking_level response has no data payload.
         return ["thinking level set to medium"]
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "PiConnector":
+        """Create a Pi connector from configuration values.
+
+        Args:
+            config: Mapping containing ``pi_options`` and optional
+                ``subprocess_kwargs`` values.
+
+        Returns:
+            A configured Pi connector.
+        """
         options = config["pi_options"]
         subprocess_kwargs = config.get(
             "subprocess_kwargs",
@@ -142,6 +228,14 @@ class PiConnector(AgentConnectorBase):
         return cls(options, subprocess_kwargs)
 
     def _process_input_message(self, input: str):
+        """Convert user input into a Pi RPC request payload.
+
+        Args:
+            input: Raw input entered by the user.
+
+        Returns:
+            The matching command payload or a prompt payload.
+        """
         normalized = input.lower().strip()
         if normalized in self.commands:
             raw_command = self.commands[normalized]["message"]
@@ -155,16 +249,32 @@ class PiConnector(AgentConnectorBase):
             return {"id": self.current_id, "type": "prompt", "message": input}
 
     def _send(self, input: str, type: str = "prompt"):
+        """Send a serialized RPC request to the Pi process.
+
+        Args:
+            input: Raw user input to convert into a request.
+            type: Requested RPC message type. Currently unused.
+        """
         self.current_id += 1
         to_send = self._process_input_message(input)
         self.proc.stdin.write(json.dumps(to_send) + "\n")
         self.proc.stdin.flush()
 
     def _read_events(self):
+        """Yield decoded RPC events from the Pi process standard output.
+
+        Yields:
+            Decoded JSON event payloads emitted by Pi.
+        """
         for line in self.proc.stdout:
             yield json.loads(line)
 
     def chat(self, raw_message: str):
+        """Send a message and render Pi's streaming response to standard output.
+
+        Args:
+            raw_message: The message to send to Pi.
+        """
         self._send(
             raw_message, type="prompt"
         )  # TODO: this needs auto-detect for different types
@@ -200,6 +310,12 @@ class PiConnector(AgentConnectorBase):
                 break
 
     def teardown(self) -> int:
+        """Terminate Pi and wait for it to exit.
+
+        Returns:
+            Pi's exit code. The process is killed if it does not stop within
+            five seconds.
+        """
         self.proc.terminate()
 
         try:
