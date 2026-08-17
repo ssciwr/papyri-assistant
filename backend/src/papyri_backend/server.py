@@ -9,10 +9,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from .chat_langchain import answer_with_chat
+from .chat_pi import answer_with_chat as answer_with_chat_pi
+from .chat_langchain import answer_with_chat as answer_with_chat_langchain
 from .settings import load_environment
 
 load_environment()
+
+if os.getenv("USE_PI"):
+    answer_with_chat = answer_with_chat_pi
+else:
+    answer_with_chat = answer_with_chat_langchain
 
 
 class ChatRequest(BaseModel):
