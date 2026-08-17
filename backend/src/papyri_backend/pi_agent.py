@@ -13,6 +13,7 @@ USER_COLOR = "\033[36m"  # cyan
 ASSISTANT_COLOR = "\x1b[35m"  # magenta
 SYSTEM_COLOR = "\033[33m"  # amber
 RESET = "\033[0m"
+THINKING_STYLE = "\033[3;32m"  # italic green
 
 
 class AgentConnectorBase:
@@ -368,6 +369,7 @@ class PiConnector(AgentConnectorBase):
 
     def _process_events(self):
         for event in self._read_events():
+            print(event.get("type"))
             if event.get("type") == "response":
                 if event.get("success"):
                     if event.get("command") == "prompt":
@@ -393,6 +395,14 @@ class PiConnector(AgentConnectorBase):
                 else:
                     print(event)
                     print(f"{SYSTEM_COLOR}Error, command {event.get('command')} failed")
+
+            if event.get("assistantMessageEvent", {}).get("type") == "thinking_delta":
+                print(
+                    f"{THINKING_STYLE}{event['assistantMessageEvent']['delta']}",
+                    end="",
+                    flush=True,
+                )
+                print(RESET, end="", flush=True)
 
             if event.get("type") == "message_update":
                 delta = event.get("assistantMessageEvent", {})
