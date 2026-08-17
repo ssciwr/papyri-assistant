@@ -6,6 +6,8 @@ import warnings
 import yaml
 from dataclasses import dataclass
 from pprint import pformat
+import threading
+
 
 USER_COLOR = "\033[36m"  # cyan
 ASSISTANT_COLOR = "\x1b[35m"  # magenta
@@ -95,7 +97,10 @@ class PiConnector(AgentConnectorBase):
             "/history": self._process_command_history,
             "/models": self._process_command_models,
             "/state": self._process_command_state,
-            "\x1b": self._process_command_abort,  # TODO: doesn't yet work
+            "/steer": self._process_command_steer,
+            "/followup": self._process_command_followup,
+            "/follow_up": self._process_command_followup,
+            "/abort": self._process_command_abort,  # TODO: doesn't yet work
         }
 
         self.response_processors = {
@@ -134,6 +139,17 @@ class PiConnector(AgentConnectorBase):
                             "provider": r["provider"],
                         }
                     break
+        self._event_thread: threading.Thread | None = None
+        self.streaming_behavior = "steer"
+
+    def _process_command_steer(self, messages: list[str]):
+
+        processed = {"type": "steer", "message": " ".join(messages)}
+        return processed
+
+    def _process_command_followup(self, messages: list[str]):
+        processed = {"type": "follow_up", "message": " ".join(messages)}
+        return processed
 
     def _process_command_thinking(self, messages: list[str]):
         processed = {"type": "set_thinking_level", "level": messages[1]}
@@ -260,7 +276,7 @@ class PiConnector(AgentConnectorBase):
             processed_list.append(formatted)
         return processed_list
 
-    def _process_response_thinking(self, _):
+    def _process_response_thinking(self, message):
         """Format a thinking-level command response.
 
         Args:
@@ -269,7 +285,8 @@ class PiConnector(AgentConnectorBase):
         Returns:
             A confirmation message for the configured thinking level.
         """
-        # does nothing
+
+        return "Model's thinking level has been changed"
 
     def _process_response_model(self, message):
         return f"Model has been switched to {message['name']}"
@@ -304,7 +321,7 @@ class PiConnector(AgentConnectorBase):
             input: Raw input entered by the user.
 
         Returns:
-            The matching command payload or a prompt payload.
+            The matching command payload or a 1payload.
         """
         normalized = input.strip().split(" ", 1)
         if normalized[0] in self.input_processors:
@@ -315,7 +332,12 @@ class PiConnector(AgentConnectorBase):
             else:
                 return normalized  # fails normally, only here to show failures atm
         else:
-            return {"id": self.current_id, "type": "prompt", "message": input}
+            return {
+                "id": self.current_id,
+                "type": "prompt",
+                "message": input,
+                "streamingBehavior": self.streaming_behavior,
+            }
 
     def _send(self, input: str):
         """Send a serialized RPC request to the Pi process.
@@ -325,7 +347,13 @@ class PiConnector(AgentConnectorBase):
             type: Requested RPC message type. Currently unused.
         """
         self.current_id += 1
+
+        # TODO:
+        # this must automatically switch to steering or follow up mode when the agent is running.
+        # how can this be done? is there a way I can query the agent to check if it's still running?
+        # we should make steer mode the default. we then implement a command to set it.
         to_send = self._process_input_message(input)
+        print("processed input message: ", to_send)
         self.proc.stdin.write(json.dumps(to_send) + "\n")
         self.proc.stdin.flush()
 
@@ -338,14 +366,7 @@ class PiConnector(AgentConnectorBase):
         for line in self.proc.stdout:
             yield json.loads(line)
 
-    def chat(self, raw_message: str):
-        """Send a message and render Pi's streaming response to standard output.
-
-        Args:
-            raw_message: The message to send to Pi.
-        """
-        self._send(raw_message)  # TODO: this needs auto-detect for different types
-
+    def _process_events(self):
         for event in self._read_events():
             if event.get("type") == "response":
                 if event.get("success"):
@@ -370,6 +391,7 @@ class PiConnector(AgentConnectorBase):
                             pass
                         break  # no further messages after the response to a command
                 else:
+                    print(event)
                     print(f"{SYSTEM_COLOR}Error, command {event.get('command')} failed")
 
             if event.get("type") == "message_update":
@@ -381,6 +403,21 @@ class PiConnector(AgentConnectorBase):
                 print("\n")
                 print(RESET, end="", flush=True)
                 break
+
+    def chat(self, raw_message: str):
+        """Send a message and render Pi's streaming response to standard output.
+
+        Args:
+            raw_message: The message to send to Pi.
+        """
+        self._send(raw_message)  # TODO: this needs auto-detect for different types
+
+        if self._event_thread is None or not self._event_thread.is_alive():
+            self._event_thread = threading.Thread(
+                target=self._process_events,
+                daemon=True,
+            )
+            self._event_thread.start()
 
     def teardown(self) -> int:
         """Terminate Pi and wait for it to exit.
