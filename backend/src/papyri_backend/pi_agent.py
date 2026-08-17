@@ -72,6 +72,8 @@ class PiConnector(AgentConnectorBase):
             options_to_pass: Command-line options passed to the ``pi`` command.
             subprocess_kwargs: Optional keyword arguments for ``subprocess.Popen``.
         """
+        super().__init__(options_to_pass, subprocess_kwargs)
+
         self.proc = subprocess.Popen(
             [
                 "pi",
@@ -85,43 +87,108 @@ class PiConnector(AgentConnectorBase):
         self.ids: list[str] = []
         self.current_id = 0
 
-        self.commands = {
-            "/new": {
-                "message": {
-                    "type": "new_session",
-                },
-            },
-            "/state": {
-                "message": {
-                    "type": "get_state",
-                },
-            },
-            "/history": {
-                "message": {
-                    "type": "get_messages",
-                },
-            },
-            "/models": {
-                "message": {
-                    "type": "get_available_models",
-                },
-            },
-            "/thinking": {
-                "message": {"type": "set_thinking_level", "level": "medium"},
-            },
+        self.input_processors = {
+            "/thinking": self._process_command_thinking,
+            "/model": self._process_command_model,  # /model model-name
+            "/new": self._process_command_new_session,
+            "/quit": self._process_command_quit,
+            "/history": self._process_command_history,
+            "/models": self._process_command_models,
+            "/state": self._process_command_state,
+            "\x1b": self._process_command_abort,  # TODO: doesn't yet work
         }
 
         self.response_processors = {
-            "new_session": self._process_new,
-            "get_state": self._process_state,
-            "get_messages": self._process_history,
-            "get_available_models": self._process_models,
-            "set_thinking_level": self._process_thinking,
+            "new_session": self._process_response_new,
+            "get_state": self._process_response_state,
+            "get_messages": self._process_response_history,
+            "get_available_models": self._process_response_models,
+            "set_thinking_level": self._process_response_thinking,
+            "set_model": self._process_response_model,
         }
 
-        super().__init__(options_to_pass, subprocess_kwargs)
+        # ask for model list once and save it, so we can look them up easily later
+        self.proc.stdin.write(
+            json.dumps(
+                {
+                    "type": "get_available_models",
+                }
+            )
+            + "\n"
+        )
+        self.proc.stdin.flush()
 
-    def _process_new(self, message):
+        self.models = {}
+        for event in self._read_events():
+            if event.get("type") == "response" and event.get("success"):
+                if event.get("command") == "prompt":
+                    continue
+                else:
+                    result = self.response_processors[event.get("command")](
+                        event.get("data")
+                    )
+                    for r in result:
+                        r = yaml.safe_load(r)
+                        self.models[r["name"]] = {
+                            "id": r["id"],
+                            "provider": r["provider"],
+                        }
+                    break
+
+    def _process_command_thinking(self, messages: list[str]):
+        processed = {"type": "set_thinking_level", "level": messages[1]}
+        return processed
+
+    def _process_command_abort(self, messages: list[str]):
+        return {"type": "abort"}
+
+    def _process_command_models(self, messages: list[str]):
+        return {
+            "type": "get_available_models",
+        }
+
+    def _process_command_model(self, messages: list[str]):
+        if len(messages) < 2:
+            message = {
+                "type": "prompt",
+                "message": f"Tell the user that they have to provide a model name for requesting a different model. You have {self.models} available",
+            }
+
+        model_name = messages[1]
+        model_data = self.models.get(model_name)
+        if not model_data:
+            message = {
+                "type": "prompt",
+                "message": f"Tell the user that they requested a non-existent model. You have {self.models} available",
+            }
+        else:
+            message = {
+                "type": "set_model",
+                "provider": model_data["provider"],
+                "modelId": model_data["id"],
+            }
+
+        return message
+
+    def _process_command_new_session(self, messages: list[str]):
+        return {
+            "type": "new_session",
+        }
+
+    def _process_command_quit(self, messages: list[str]):
+        return message
+
+    def _process_command_history(self, messages: list[str]):
+        return {
+            "type": "get_messages",
+        }
+
+    def _process_command_state(self, messages: list[str]):
+        return {
+            "type": "get_state",
+        }
+
+    def _process_response_new(self, message):
         """Format a new-session command response.
 
         Args:
@@ -134,7 +201,7 @@ class PiConnector(AgentConnectorBase):
             return ["new session cancelled"]
         return ["new session started"]
 
-    def _process_state(self, message):
+    def _process_response_state(self, message):
         """Format the current Pi session state as YAML.
 
         Args:
@@ -151,7 +218,7 @@ class PiConnector(AgentConnectorBase):
         ).rstrip()
         return [formatted]
 
-    def _process_history(self, message: dict[str, Any]):
+    def _process_response_history(self, message: dict[str, Any]):
         """Format text messages from the current session history.
 
         Args:
@@ -172,7 +239,7 @@ class PiConnector(AgentConnectorBase):
                     processed_list.append(formatted)
         return processed_list
 
-    def _process_models(self, message):
+    def _process_response_models(self, message):
         """Format the available Pi models as YAML.
 
         Args:
@@ -182,6 +249,7 @@ class PiConnector(AgentConnectorBase):
             A formatted YAML entry for each available model.
         """
         processed_list = []
+
         for model in message["models"]:
             formatted = yaml.safe_dump(
                 model,
@@ -192,7 +260,7 @@ class PiConnector(AgentConnectorBase):
             processed_list.append(formatted)
         return processed_list
 
-    def _process_thinking(self, message):
+    def _process_response_thinking(self, _):
         """Format a thinking-level command response.
 
         Args:
@@ -201,8 +269,10 @@ class PiConnector(AgentConnectorBase):
         Returns:
             A confirmation message for the configured thinking level.
         """
-        # A successful set_thinking_level response has no data payload.
-        return ["thinking level set to medium"]
+        # does nothing
+
+    def _process_response_model(self, message):
+        return f"Model has been switched to {message['name']}"
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "PiConnector":
@@ -236,19 +306,18 @@ class PiConnector(AgentConnectorBase):
         Returns:
             The matching command payload or a prompt payload.
         """
-        normalized = input.lower().strip()
-        if normalized in self.commands:
-            raw_command = self.commands[normalized]["message"]
-
-            split_command = normalized.split(" ")
-            if len(split_command) > 1:
-                print(split_command)
-
-            return raw_command
+        normalized = input.strip().split(" ", 1)
+        if normalized[0] in self.input_processors:
+            processor = self.input_processors.get(normalized[0])
+            if processor:
+                processed = processor(normalized)
+                return processed
+            else:
+                return normalized  # fails normally, only here to show failures atm
         else:
             return {"id": self.current_id, "type": "prompt", "message": input}
 
-    def _send(self, input: str, type: str = "prompt"):
+    def _send(self, input: str):
         """Send a serialized RPC request to the Pi process.
 
         Args:
@@ -275,9 +344,7 @@ class PiConnector(AgentConnectorBase):
         Args:
             raw_message: The message to send to Pi.
         """
-        self._send(
-            raw_message, type="prompt"
-        )  # TODO: this needs auto-detect for different types
+        self._send(raw_message)  # TODO: this needs auto-detect for different types
 
         for event in self._read_events():
             if event.get("type") == "response":
@@ -289,12 +356,18 @@ class PiConnector(AgentConnectorBase):
                             event.get("data")
                         )
 
-                        if isinstance(result, Sequence):
+                        if (
+                            result
+                            and isinstance(result, Sequence)
+                            and not isinstance(result, str)
+                        ):
                             for res in result:
                                 print(f"{SYSTEM_COLOR}{res}", flush=True)
                                 print("\n")
-                        else:
+                        elif result:
                             print(f"{SYSTEM_COLOR}{result}")
+                        else:
+                            pass
                         break  # no further messages after the response to a command
                 else:
                     print(f"{SYSTEM_COLOR}Error, command {event.get('command')} failed")
