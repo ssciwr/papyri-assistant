@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from .chat import answer_with_chat
+from .chat_langchain import answer_with_chat
 from .settings import load_environment
 
 load_environment()

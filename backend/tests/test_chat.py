@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from papyri_backend import chat
+from papyri_backend import chat_langchain
 from papyri_backend.utils.messages import NormalizedMessage
 
 
@@ -16,14 +16,14 @@ def test_provider_kwargs_requires_api_key(monkeypatch) -> None:
     monkeypatch.delenv("LLM_API_KEY", raising=False)
 
     with pytest.raises(ValueError, match="Set LLM_API_KEY"):
-        chat._provider_kwargs()
+        chat_langchain._provider_kwargs()
 
 
 def test_provider_kwargs_includes_optional_base_url(monkeypatch) -> None:
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setenv("LLM_API_URL", "https://example.test/v1")
 
-    assert chat._provider_kwargs() == {
+    assert chat_langchain._provider_kwargs() == {
         "api_key": "test-key",
         "base_url": "https://example.test/v1",
     }
@@ -38,7 +38,7 @@ def test_provider_kwargs_includes_optional_base_url(monkeypatch) -> None:
     ],
 )
 def test_to_langchain_message_uses_role_specific_classes(role, expected_type) -> None:
-    converted = chat._to_langchain_message(
+    converted = chat_langchain._to_langchain_message(
         NormalizedMessage(role=role, content="Hello")
     )
 
@@ -54,14 +54,14 @@ def test_find_last_user_message_index() -> None:
         NormalizedMessage(role="user", content="Second"),
     ]
 
-    assert chat._find_last_user_message_index(messages) == 3
-    assert chat._find_last_user_message_index(messages[:1]) == -1
+    assert chat_langchain._find_last_user_message_index(messages) == 3
+    assert chat_langchain._find_last_user_message_index(messages[:1]) == -1
 
 
 def test_stringify_model_content_handles_strings_lists_and_mappings() -> None:
-    assert chat._stringify_model_content("plain") == "plain"
+    assert chat_langchain._stringify_model_content("plain") == "plain"
     assert (
-        chat._stringify_model_content(
+        chat_langchain._stringify_model_content(
             [
                 {"text": "one"},
                 {"content": "two"},
@@ -71,13 +71,13 @@ def test_stringify_model_content_handles_strings_lists_and_mappings() -> None:
         )
         == "one\ntwo\nthree"
     )
-    assert chat._stringify_model_content(123) == "123"
+    assert chat_langchain._stringify_model_content(123) == "123"
 
 
 def test_answer_with_chat_requires_a_user_message() -> None:
     with pytest.raises(ValueError, match="No user message found"):
         asyncio.run(
-            chat.answer_with_chat(
+            chat_langchain.answer_with_chat(
                 [
                     {"role": "system", "content": "Rules"},
                     {"role": "assistant", "content": "Reply"},
@@ -126,14 +126,14 @@ def test_answer_with_chat_sends_context_window_to_model(monkeypatch) -> None:
     fake_langchain_openai.ChatOpenAI = FakeChatOpenAI
 
     monkeypatch.setitem(sys.modules, "langchain_openai", fake_langchain_openai)
-    monkeypatch.setattr(chat, "ChatPromptTemplate", FakePrompt)
-    monkeypatch.setattr(chat, "MessagesPlaceholder", FakeMessagesPlaceholder)
+    monkeypatch.setattr(chat_langchain, "ChatPromptTemplate", FakePrompt)
+    monkeypatch.setattr(chat_langchain, "MessagesPlaceholder", FakeMessagesPlaceholder)
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setenv("LLM_API_URL", "https://example.test/v1")
     monkeypatch.setenv("LLM_MODEL", "test-model")
 
     result = asyncio.run(
-        chat.answer_with_chat(
+        chat_langchain.answer_with_chat(
             [{"role": "user", "content": f"message {index}"} for index in range(12)]
         )
     )
@@ -146,7 +146,10 @@ def test_answer_with_chat_sends_context_window_to_model(monkeypatch) -> None:
         "base_url": "https://example.test/v1",
     }
     assert FakePrompt.created_messages is not None
-    assert FakePrompt.created_messages[0] == ("system", chat._DEFAULT_SYSTEM_PROMPT)
+    assert FakePrompt.created_messages[0] == (
+        "system",
+        chat_langchain._DEFAULT_SYSTEM_PROMPT,
+    )
     assert isinstance(FakePrompt.created_messages[1], FakeMessagesPlaceholder)
     assert FakePrompt.created_messages[1].variable_name == "messages"
     assert FakeChain.payload is not None

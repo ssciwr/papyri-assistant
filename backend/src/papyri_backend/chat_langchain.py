@@ -14,7 +14,7 @@ _DEFAULT_SYSTEM_PROMPT = "You are a concise, helpful assistant."
 _MAX_CONTEXT_MESSAGES = 9
 
 
-async def answer_with_chat_langchain(raw_messages: list[Any]) -> dict[str, str]:
+async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
     messages = normalize_messages(raw_messages)
     last_user_message_index = _find_last_user_message_index(messages)
 
@@ -43,25 +43,6 @@ async def answer_with_chat_langchain(raw_messages: list[Any]) -> dict[str, str]:
     response = await chain.ainvoke({"messages": conversation})
 
     return {"text": _stringify_model_content(response.content)}
-
-
-async def answer_with_chat_pi(raw_messages: list[Any]) -> dict[str, str]:
-    # dummy
-    return {"text": "nothing"}
-
-
-async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
-
-    chat_service = _get_required_env(
-        "CHAT_SERVICE",
-        message="Error, no chat service configured via env var `CHAT_SERVICE`",
-    )
-
-    if chat_service.lower() == "langchain":
-        return await answer_with_chat_langchain(raw_messages)
-
-    if chat_service.lower() == "pi":
-        return await answer_with_chat_pi(raw_messages)
 
 
 def _provider_kwargs() -> dict[str, str]:
