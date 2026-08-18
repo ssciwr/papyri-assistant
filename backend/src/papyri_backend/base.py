@@ -8,13 +8,13 @@ class BaseAgent(ABC):
     def __init__(
         self,
         options_to_pass: list[str],
-        subprocess_kwargs: dict[str, Any] | None = None,
+        kwargs: dict[str, Any] | None = None,
     ):
         """Initialize a connector with agent command-line options.
 
         Args:
             options_to_pass: Command-line options passed to the agent process.
-            subprocess_kwargs: Optional keyword arguments for creating the process.
+            kwargs: Optional keyword arguments for creating the process.
         """
         ...
 
