@@ -1,117 +1,242 @@
+"""Provide connectors and message processors for Pi's JSON-RPC interface."""
+
 import subprocess
 import json
 from typing import Any, Literal
 from collections.abc import Mapping, Sequence
 import warnings
 import yaml
-from dataclasses import dataclass
 from pprint import pformat
 import threading
-
+from abc import ABC, abstractmethod
+from pathlib import Path
+from .base import BaseAgent
 
 USER_COLOR = "\033[36m"  # cyan
 ASSISTANT_COLOR = "\x1b[35m"  # magenta
 SYSTEM_COLOR = "\033[33m"  # amber
 RESET = "\033[0m"
 THINKING_STYLE = "\033[3;32m"  # italic green
+ERROR_COLOR = "\033[41m"
+
+PI_AGENT = None  # agent instance
 
 
-class AgentConnectorBase:
-    """Define the interface for connectors that communicate with AI agents."""
+class PiMessageProcessorBase(ABC):
+    """Define how processed Pi events are presented to a client."""
 
-    def __init__(
-        self,
-        options_to_pass: list[str],
-        subprocess_kwargs: dict[str, Any] | None = None,
-    ):
-        """Initialize a connector with agent command-line options.
-
-        Args:
-            options_to_pass: Command-line options passed to the agent process.
-            subprocess_kwargs: Optional keyword arguments for creating the process.
-        """
-        ...
-
-    @classmethod
-    def from_config(cls, config: dict[str, Any]) -> "AgentConnectorBase":
-        """Create a connector from its configuration mapping.
+    @abstractmethod
+    def _process_events_command_response(self, processed_event):
+        """Handle a processed command response.
 
         Args:
-            config: Connector configuration values.
-
-        Returns:
-            A configured connector instance.
+            processed_event: Formatted response data to present.
         """
         ...
 
-    def _send(self, input: str): ...
+    @abstractmethod
+    def _process_events_message_update(self, event):
+        """Handle a streaming assistant message update.
 
-    def _read_events(self): ...
-
-    def chat(
-        self,
-    ):
-        """Implements the prompt-answer dialogue loop."""
-        ...
-
-    def teardown(self) -> int:
-        """Stop the underlying agent process.
-
-        Returns:
-            The process exit code.
+        Args:
+            event: Message update payload emitted by Pi.
         """
         ...
 
+    @abstractmethod
+    def _process_events_tool_usage_start(self, event):
+        """Handle notification that tool execution started.
 
-class PiMessageProcessorBase:
-    def process_tool(self, event): ...
+        Args:
+            event: Tool execution event emitted by Pi.
+        """
+        ...
 
-    def process_thinking(self, event): ...
+    @abstractmethod
+    def _process_events_tool_usage_end(self, event):
+        """Handle notification that tool execution ended.
 
-    def process_message(self, event): ...
+        Args:
+            event: Tool execution event emitted by Pi.
+        """
+        ...
 
-    def process_ui_response(self, event): ...
+    @abstractmethod
+    def _process_input_failure(self, input):
+        """Handle user input that cannot be converted to a request.
 
-    def process_response(self, event): ...
+        Args:
+            input: Unsupported user input.
+        """
+        ...
+
+    @abstractmethod
+    def _process_events_extension_ui_response(self, event):
+        """Handle extension events which might present choices to the user for permission for example."""
 
 
 class PiMessageProcessorTerminal(PiMessageProcessorBase):
-    def process_tool(self, event): ...
+    """Render Pi events as colorized terminal output."""
 
-    def process_thinking(self, event): ...
+    # TODO: this needs prompt_toolkit to work properly b/c the TTY is
+    # racing here.
+    def _process_events_command_response(self, processed_event):
+        """Print a processed command response to the terminal.
 
-    def process_message(self, event): ...
+        Args:
+            processed_event: A response value or sequence of response values.
+        """
+        if (
+            processed_event
+            and isinstance(processed_event, Sequence)
+            and not isinstance(processed_event, str)
+        ):
+            for res in processed_event:
+                print(f"{SYSTEM_COLOR}{res}", flush=True)
+                print("\n")
+        elif processed_event:
+            print(f"{SYSTEM_COLOR}{processed_event}")
+            print(RESET, end="", flush=True)
+        else:
+            pass
 
-    def process_ui_response(self, event): ...
+    def _process_events_message_update(self, event: dict[str, Any]):
+        """Print a streaming text or thinking update.
 
-    def process_response(self, event): ...
+        Args:
+            event: Assistant message event containing a delta.
+        """
+        if event.get("type") == "text_delta":
+            print(
+                f"{ASSISTANT_COLOR}{event['delta']}{RESET}{USER_COLOR}",
+                end="",
+                flush=True,
+            )
+        elif event.get("type") == "thinking_delta":
+            print(
+                f"{THINKING_STYLE}{event['delta']}{RESET}",
+                end="",
+                flush=True,
+            )
+        else:
+            pass  # do nothing, the event type is not relevant for processing
+            # print(f"{RESET}unaccounted for message_update: ", event)
+
+    def _process_events_tool_usage_start(self, event):
+        """Print the name and arguments of a tool starting execution.
+
+        Args:
+            event: Tool execution event containing its name and arguments.
+        """
+        tool_name = event["toolName"]
+        args = event.get("args", {})
+        print(
+            f"{THINKING_STYLE}**Using tool: {tool_name}**{RESET}",
+            flush=True,
+        )
+        for k, v in args.items():
+            fk = pformat(k, compact=True)
+            fv = pformat(v, compact=True)
+            print(
+                f"{THINKING_STYLE}  {fk}: {fv}**{RESET}",
+                flush=True,
+            )
+
+    def _process_events_tool_usage_end(self, event):
+        """Print the outcome of a completed tool execution.
+
+        Args:
+            event: Tool execution event containing its name and outcome.
+        """
+        tool_name = event["toolName"]
+        outcome = "failed" if event.get("isError") else "completed"
+        print(
+            f"{THINKING_STYLE}**Tool {outcome}: {tool_name}**{RESET}",
+            flush=True,
+        )
+
+    def _process_input_failure(self, input):
+        """Print an error for unsupported user input.
+
+        Args:
+            input: Unsupported user input.
+        """
+        print(
+            f"{ERROR_COLOR}{input} is not a known command.{RESET}",
+            flush=True,
+        )
+
+    def _process_events_extension_ui_response(self, event):
+        """Process extension ui responses, e.g., for allowing tool usages
+
+        Args:
+            event: Extension ui response event dict
+        """
+        # TODO: this does not work yet, I need a dummy case for it.
+        print(f"{SYSTEM_COLOR}extension ui response: ", event, f"{RESET}")
 
 
-class PiMessageProcessorJSON(PiMessageProcessorBase):
-    def process_tool(self, event): ...
+class PiMessageProcessorAPI(PiMessageProcessorBase):
+    """Provide placeholder event handlers for future API integrations."""
 
-    def process_thinking(self, event): ...
+    def _process_events_command_response(self, processed_event):
+        """Handle a processed command response.
 
-    def process_message(self, event): ...
+        Args:
+            processed_event: Formatted response data to expose through an API.
+        """
 
-    def process_ui_response(self, event): ...
+    def _process_events_message_update(self, event):
+        """Handle a streaming assistant message update.
 
-    def process_response(self, event): ...
+        Args:
+            event: Message update payload emitted by Pi.
+        """
+
+    def _process_events_tool_usage_start(self, event):
+        """Handle notification that tool execution started.
+
+        Args:
+            event: Tool execution event emitted by Pi.
+        """
+
+    def _process_events_tool_usage_end(self, event):
+        """Handle notification that tool execution ended.
+
+        Args:
+            event: Tool execution event emitted by Pi.
+        """
+
+    def _process_input_failure(self, input):
+        """Handle unsupported user input.
+
+        Args:
+            input: Unsupported user input.
+        """
+
+    def _process_events_extension_ui_response(self, event):
+        """Process extension ui responses, e.g., for allowing tool usages
+
+        Args:
+            event: Extension ui response event dict
+        """
 
 
-class PiConnector(AgentConnectorBase):
+class PiConnector(BaseAgent):
     """Connect to a Pi agent running in RPC mode."""
 
     def __init__(
         self,
         options_to_pass: list[str],
         subprocess_kwargs: dict[str, Any] | None = None,
+        message_processor: type[PiMessageProcessorBase] = PiMessageProcessorTerminal,
     ):
         """Start a Pi RPC subprocess.
 
         Args:
             options_to_pass: Command-line options passed to the ``pi`` command.
             subprocess_kwargs: Optional keyword arguments for ``subprocess.Popen``.
+            message_processor: Processor class used to handle Pi events.
         """
         super().__init__(options_to_pass, subprocess_kwargs)
 
@@ -153,6 +278,8 @@ class PiConnector(AgentConnectorBase):
             "get_commands": self._process_response_commands,
         }
 
+        self.message_processor = message_processor()  # no arguments
+
         # ask for model list once and save it, so we can look them up easily later
         self.proc.stdin.write(
             json.dumps(
@@ -184,31 +311,86 @@ class PiConnector(AgentConnectorBase):
         self.streaming_behavior = "steer"
 
     def _process_get_commands(self, message: list[str]):
+        """Build a request for the commands available from Pi.
+
+        Args:
+            message: Parsed command input. The value is unused.
+
+        Returns:
+            A ``get_commands`` request payload.
+        """
         processed = {"type": "get_commands"}
         return processed
 
     def _process_command_steer(self, messages: list[str]):
+        """Build a request to steer the active agent run.
 
+        Args:
+            messages: Parsed command and steering instruction.
+
+        Returns:
+            A ``steer`` request payload.
+        """
         processed = {"type": "steer", "message": " ".join(messages)}
         return processed
 
     def _process_command_followup(self, messages: list[str]):
+        """Build a follow-up request for the active agent run.
+
+        Args:
+            messages: Parsed command and follow-up instruction.
+
+        Returns:
+            A ``follow_up`` request payload.
+        """
         processed = {"type": "follow_up", "message": " ".join(messages)}
         return processed
 
     def _process_command_thinking(self, messages: list[str]):
+        """Build a request to change the model's thinking level.
+
+        Args:
+            messages: Parsed command followed by the requested level.
+
+        Returns:
+            A ``set_thinking_level`` request payload.
+        """
         processed = {"type": "set_thinking_level", "level": messages[1]}
         return processed
 
     def _process_command_abort(self, messages: list[str]):
+        """Build a request to abort the active agent run.
+
+        Args:
+            messages: Parsed command input. The value is unused.
+
+        Returns:
+            An ``abort`` request payload.
+        """
         return {"type": "abort"}
 
     def _process_command_models(self, messages: list[str]):
+        """Build a request for the models available to Pi.
+
+        Args:
+            messages: Parsed command input. The value is unused.
+
+        Returns:
+            A ``get_available_models`` request payload.
+        """
         return {
             "type": "get_available_models",
         }
 
     def _process_command_model(self, messages: list[str]):
+        """Build a request to select a model by name.
+
+        Args:
+            messages: Parsed command followed by the requested model name.
+
+        Returns:
+            A model-selection request or a prompt describing invalid input.
+        """
         if len(messages) < 2:
             message = {
                 "type": "prompt",
@@ -232,24 +414,64 @@ class PiConnector(AgentConnectorBase):
         return message
 
     def _process_command_new_session(self, messages: list[str]):
+        """Build a request to start a new Pi session.
+
+        Args:
+            messages: Parsed command input. The value is unused.
+
+        Returns:
+            A ``new_session`` request payload.
+        """
         return {
             "type": "new_session",
         }
 
     def _process_command_quit(self, messages: list[str]):
+        """Return the parsed quit command unchanged.
+
+        Args:
+            messages: Parsed quit command.
+
+        Returns:
+            The unchanged parsed command.
+        """
         return messages
 
     def _process_command_history(self, messages: list[str]):
+        """Build a request for the current session's message history.
+
+        Args:
+            messages: Parsed command input. The value is unused.
+
+        Returns:
+            A ``get_messages`` request payload.
+        """
         return {
             "type": "get_messages",
         }
 
     def _process_command_state(self, messages: list[str]):
+        """Build a request for the current Pi session state.
+
+        Args:
+            messages: Parsed command input. The value is unused.
+
+        Returns:
+            A ``get_state`` request payload.
+        """
         return {
             "type": "get_state",
         }
 
     def _process_response_commands(self, message):
+        """Format the commands available from Pi.
+
+        Args:
+            message: Response payload containing command metadata.
+
+        Returns:
+            Command names and descriptions separated by blank lines.
+        """
         commands = message.get("commands", [])
         if not commands:
             return "No commands available."
@@ -344,68 +566,58 @@ class PiConnector(AgentConnectorBase):
         return "Model's thinking level has been changed"
 
     def _process_response_model(self, message):
-        return f"Model has been switched to {message['name']}"
-
-    @classmethod
-    def from_config(cls, config: dict[str, Any]) -> "PiConnector":
-        """Create a Pi connector from configuration values.
+        """Format a model-selection response.
 
         Args:
-            config: Mapping containing ``pi_options`` and optional
-                ``subprocess_kwargs`` values.
+            message: Response payload containing the selected model name.
 
         Returns:
-            A configured Pi connector.
+            A confirmation naming the selected model.
         """
-        options = config["pi_options"]
-        subprocess_kwargs = config.get(
-            "subprocess_kwargs",
-            {
-                "stdin": subprocess.PIPE,
-                "stdout": subprocess.PIPE,
-                "text": True,
-            },
-        )
+        return f"Model has been switched to {message['name']}"
 
-        return cls(options, subprocess_kwargs)
-
-    def _process_input_message(self, input: str):
+    def _process_input_message(self, user_input: str):
         """Convert user input into a Pi RPC request payload.
 
         Args:
-            input: Raw input entered by the user.
+            user_input: Raw input entered by the user.
 
         Returns:
-            The matching command payload or a 1payload.
+            The matching command payload, a prompt payload, or ``None`` for an
+            unsupported wrapper command.
         """
-        normalized = input.strip().split(" ", 1)
-        if normalized[0] in self.input_processors:
-            processor = self.input_processors.get(normalized[0])
-            if processor:
-                processed = processor(normalized)
-                return processed
-            else:
-                return normalized  # fails normally, only here to show failures atm
-        else:
-            return {
-                "id": self.current_id,
-                "type": "prompt",
-                "message": input,
-                "streamingBehavior": self.streaming_behavior,
-            }
+        parts = user_input.strip().split(" ", 1)
+        command = parts[
+            0
+        ]  # split input to get command and arguments. Remerge when it's a prompt
 
-    def _send(self, input: str):
+        if command in self.input_processors:
+            return self.input_processors[command](parts)
+
+        elif command.startswith(("\\", "/")):
+            return None  # unsupported wrapper command
+
+        return {
+            "id": self.current_id,
+            "type": "prompt",
+            "message": user_input,
+            "streamingBehavior": self.streaming_behavior,
+        }
+
+    def send(self, input: str):
         """Send a serialized RPC request to the Pi process.
 
         Args:
             input: Raw user input to convert into a request.
-            type: Requested RPC message type. Currently unused.
         """
         self.current_id += 1
 
         to_send = self._process_input_message(input)
-        self.proc.stdin.write(json.dumps(to_send) + "\n")
-        self.proc.stdin.flush()
+        if not to_send:
+            self.message_processor._process_input_failure(input)
+        else:
+            self.proc.stdin.write(json.dumps(to_send) + "\n")
+            self.proc.stdin.flush()
 
     def _read_events(self):
         """Yield decoded RPC events from the Pi process standard output.
@@ -416,12 +628,14 @@ class PiConnector(AgentConnectorBase):
         for line in self.proc.stdout:
             yield json.loads(line)
 
-    def _process_events(self):
+    def process_events(self):
+        """Read and dispatch Pi events until the current request settles."""
+        # implements the control flow for event processing.
+        # delegates implement treatment of events
         for event in self._read_events():
             if event.get("type") == "extension_ui_response":
-                print(f"{SYSTEM_COLOR}extension ui response: ", event, f"{RESET}")
-
-            if event.get("type") == "response":
+                self.message_processor._process_events_extension_ui_response(event)
+            elif event.get("type") == "response":
                 if event.get("success"):
                     if event.get("command") == "prompt":
                         continue
@@ -429,109 +643,49 @@ class PiConnector(AgentConnectorBase):
                         result = self.response_processors[event.get("command")](
                             event.get("data")
                         )
-
-                        if (
-                            result
-                            and isinstance(result, Sequence)
-                            and not isinstance(result, str)
-                        ):
-                            for res in result:
-                                print(f"{SYSTEM_COLOR}{res}", flush=True)
-                                print("\n")
-                        elif result:
-                            print(f"{SYSTEM_COLOR}{result}")
-                            print(RESET, end="", flush=True)
-                        else:
-                            pass
+                        self.message_processor._process_events_command_response(result)
                         break  # no further messages after the response to a command
                 else:
                     print(
                         f"{SYSTEM_COLOR}Error, command {event.get('command')} failed{RESET}"
                     )
 
-            if event.get("type") == "message_update":
-                delta = event.get("assistantMessageEvent", {})
-                if delta.get("type") == "text_delta":
-                    print(
-                        f"{ASSISTANT_COLOR}{delta['delta']}{RESET}",
-                        end="",
-                        flush=True,
-                    )
-                    print(USER_COLOR, end="", flush=True)
-
-                # elif delta.get("type") == "thinking_start":
-                #     print(
-                #         f"{THINKING_STYLE}{'\n**Reasoning start**'}{RESET}",
-                #         end="\n",
-                #         flush=True,
-                #     )
-                elif delta.get("type") == "thinking_delta":
-                    print(
-                        f"{THINKING_STYLE}{event['assistantMessageEvent']['delta']}{RESET}",
-                        end="",
-                        flush=True,
-                    )
-                # elif delta.get("type") == "thinking_end":
-                #     print(
-                #         f"{THINKING_STYLE}{'**Reasoning end**'}{RESET}",
-                #         end="\n",
-                #         flush=True,
-                #     )
-                else:
-                    pass  # do nothing, the event type is not relevant for processing
-                    # print(f"{RESET}unaccounted for message_update: ", event)
-
-            if event.get("type") == "tool_execution_start":
-                tool_name = event["toolName"]
-                args = event.get("args", {})
-                print(
-                    f"{THINKING_STYLE}**Using tool: {tool_name}**{RESET}",
-                    flush=True,
+            elif event.get("type") == "message_update":
+                assistant_message_event = event.get("assistantMessageEvent", {})
+                self.message_processor._process_events_message_update(
+                    assistant_message_event
                 )
-                for k, v in args.items():
-                    fk = pformat(k, compact=True)
-                    fv = pformat(v, compact=True)
-                    print(
-                        f"{THINKING_STYLE}  {fk}: {fv}**{RESET}",
-                        flush=True,
-                    )
-
+            elif event.get("type") == "tool_execution_start":
+                self.message_processor._process_events_tool_usage_start(event)
             elif event.get("type") == "tool_execution_end":
-                tool_name = event["toolName"]
-                outcome = "failed" if event.get("isError") else "completed"
-                print(
-                    f"{THINKING_STYLE}**Tool {outcome}: {tool_name}**{RESET}",
-                    flush=True,
-                )
+                self.message_processor._process_events_tool_usage_end(event)
 
-            if event.get("type") == "agent_settled":
-                print(f"\n{RESET}")
+            elif event.get("type") == "agent_settled":
+                print(f"\n{RESET}{USER_COLOR}")
                 break
+            else:
+                pass  # ignore all others
 
     def chat(
         self,
     ):
-        """Send a message and render Pi's streaming response to standard output.
-
-        Args:
-            raw_message: The message to send to Pi.
-        """
+        """Run an interactive loop and render Pi's streaming responses."""
 
         while True:
             try:
-                print(USER_COLOR, end="", flush=True)
                 message = "nothing"
+                print(USER_COLOR, end="", flush=True)
                 try:
                     message = input(">> ")
                     if message.strip() == "/quit":
                         break
                 finally:
                     print(RESET, end="\n", flush=True)
-                self._send(message)
+                self.send(message)
 
                 if self._event_thread is None or not self._event_thread.is_alive():
                     self._event_thread = threading.Thread(
-                        target=self._process_events,
+                        target=self.process_events,
                         daemon=True,
                     )
                     self._event_thread.start()
@@ -565,7 +719,34 @@ class PiConnector(AgentConnectorBase):
             self.proc.kill()
             exit_code = self.proc.wait()
 
+        if self._event_thread:
+            self._event_thread.join()
+
         return exit_code
+
+
+def create_pi_agent(pi_agent_args: list[str], kwargs: dict[str, Any]) -> PiConnector:
+    global PI_AGENT
+    if PI_AGENT is None:
+        args = list(
+            set(["--mode", "rpc"] + pi_agent_args)
+        )  # remove duplicates in case rpc is given already for instance.
+        PI_AGENT = PiConnector(
+            options_to_pass=args,
+            subprocess_kwargs=kwargs,
+            message_processor=PiMessageProcessorAPI,
+        )
+    return PI_AGENT
+
+
+def create_pi_agent_from_config(config_path: str) -> PiConnector:
+    with open(Path(config_path).resolve()) as f:
+        cfg = yaml.safe_load(f)
+
+    pi_agent_args = cfg["agent_options"]
+    subprocess_kwargs = cfg["subprocess_kwargs"]
+
+    return create_pi_agent(pi_agent_args, subprocess_kwargs)
 
 
 if __name__ == "__main__":
