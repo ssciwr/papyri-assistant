@@ -6,7 +6,6 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_openai import ChatOpenAI
 
 from .utils.messages import NormalizedMessage, normalize_messages
 
@@ -24,6 +23,8 @@ async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
     start_index = max(0, last_user_message_index - (_MAX_CONTEXT_MESSAGES - 1))
     window = messages[start_index : last_user_message_index + 1]
     conversation = [_to_langchain_message(message) for message in window]
+
+    from langchain_openai import ChatOpenAI
 
     model = ChatOpenAI(
         model=_get_required_env(
