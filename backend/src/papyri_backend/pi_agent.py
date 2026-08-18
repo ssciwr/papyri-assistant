@@ -44,12 +44,14 @@ class AgentConnectorBase:
         """
         ...
 
-    def chat(self, raw_message: str):
-        """Send a message to the agent and display its response.
+    def _send(self, input: str): ...
 
-        Args:
-            raw_message: The user message to send.
-        """
+    def _read_events(self): ...
+
+    def chat(
+        self,
+    ):
+        """Implements the prompt-answer dialogue loop."""
         ...
 
     def teardown(self) -> int:
@@ -59,6 +61,42 @@ class AgentConnectorBase:
             The process exit code.
         """
         ...
+
+
+class PiMessageProcessorBase:
+    def process_tool(self, event): ...
+
+    def process_thinking(self, event): ...
+
+    def process_message(self, event): ...
+
+    def process_ui_response(self, event): ...
+
+    def process_response(self, event): ...
+
+
+class PiMessageProcessorTerminal(PiMessageProcessorBase):
+    def process_tool(self, event): ...
+
+    def process_thinking(self, event): ...
+
+    def process_message(self, event): ...
+
+    def process_ui_response(self, event): ...
+
+    def process_response(self, event): ...
+
+
+class PiMessageProcessorJSON(PiMessageProcessorBase):
+    def process_tool(self, event): ...
+
+    def process_thinking(self, event): ...
+
+    def process_message(self, event): ...
+
+    def process_ui_response(self, event): ...
+
+    def process_response(self, event): ...
 
 
 class PiConnector(AgentConnectorBase):
@@ -101,6 +139,7 @@ class PiConnector(AgentConnectorBase):
             "/steer": self._process_command_steer,
             "/followup": self._process_command_followup,
             "/follow_up": self._process_command_followup,
+            "/commands": self._process_get_commands,
             "/abort": self._process_command_abort,  # TODO: doesn't yet work
         }
 
@@ -111,6 +150,7 @@ class PiConnector(AgentConnectorBase):
             "get_available_models": self._process_response_models,
             "set_thinking_level": self._process_response_thinking,
             "set_model": self._process_response_model,
+            "get_commands": self._process_response_commands,
         }
 
         # ask for model list once and save it, so we can look them up easily later
@@ -142,6 +182,10 @@ class PiConnector(AgentConnectorBase):
                     break
         self._event_thread: threading.Thread | None = None
         self.streaming_behavior = "steer"
+
+    def _process_get_commands(self, message: list[str]):
+        processed = {"type": "get_commands"}
+        return processed
 
     def _process_command_steer(self, messages: list[str]):
 
@@ -193,7 +237,7 @@ class PiConnector(AgentConnectorBase):
         }
 
     def _process_command_quit(self, messages: list[str]):
-        return message
+        return messages
 
     def _process_command_history(self, messages: list[str]):
         return {
@@ -204,6 +248,16 @@ class PiConnector(AgentConnectorBase):
         return {
             "type": "get_state",
         }
+
+    def _process_response_commands(self, message):
+        commands = message.get("commands", [])
+        if not commands:
+            return "No commands available."
+
+        return "\n\n".join(
+            f"{command.get('name', '')}: {command.get('description', '')}"
+            for command in commands
+        )
 
     def _process_response_new(self, message):
         """Format a new-session command response.
@@ -349,12 +403,7 @@ class PiConnector(AgentConnectorBase):
         """
         self.current_id += 1
 
-        # TODO:
-        # this must automatically switch to steering or follow up mode when the agent is running.
-        # how can this be done? is there a way I can query the agent to check if it's still running?
-        # we should make steer mode the default. we then implement a command to set it.
         to_send = self._process_input_message(input)
-        print("processed input message: ", to_send)
         self.proc.stdin.write(json.dumps(to_send) + "\n")
         self.proc.stdin.flush()
 
@@ -369,7 +418,9 @@ class PiConnector(AgentConnectorBase):
 
     def _process_events(self):
         for event in self._read_events():
-            print(event.get("type"))
+            if event.get("type") == "extension_ui_response":
+                print(f"{SYSTEM_COLOR}extension ui response: ", event, f"{RESET}")
+
             if event.get("type") == "response":
                 if event.get("success"):
                     if event.get("command") == "prompt":
@@ -389,45 +440,109 @@ class PiConnector(AgentConnectorBase):
                                 print("\n")
                         elif result:
                             print(f"{SYSTEM_COLOR}{result}")
+                            print(RESET, end="", flush=True)
                         else:
                             pass
                         break  # no further messages after the response to a command
                 else:
-                    print(event)
-                    print(f"{SYSTEM_COLOR}Error, command {event.get('command')} failed")
-
-            if event.get("assistantMessageEvent", {}).get("type") == "thinking_delta":
-                print(
-                    f"{THINKING_STYLE}{event['assistantMessageEvent']['delta']}",
-                    end="",
-                    flush=True,
-                )
-                print(RESET, end="", flush=True)
+                    print(
+                        f"{SYSTEM_COLOR}Error, command {event.get('command')} failed{RESET}"
+                    )
 
             if event.get("type") == "message_update":
                 delta = event.get("assistantMessageEvent", {})
                 if delta.get("type") == "text_delta":
-                    print(f"{ASSISTANT_COLOR}{delta['delta']}", end="", flush=True)
+                    print(
+                        f"{ASSISTANT_COLOR}{delta['delta']}{RESET}",
+                        end="",
+                        flush=True,
+                    )
+                    print(USER_COLOR, end="", flush=True)
+
+                # elif delta.get("type") == "thinking_start":
+                #     print(
+                #         f"{THINKING_STYLE}{'\n**Reasoning start**'}{RESET}",
+                #         end="\n",
+                #         flush=True,
+                #     )
+                elif delta.get("type") == "thinking_delta":
+                    print(
+                        f"{THINKING_STYLE}{event['assistantMessageEvent']['delta']}{RESET}",
+                        end="",
+                        flush=True,
+                    )
+                # elif delta.get("type") == "thinking_end":
+                #     print(
+                #         f"{THINKING_STYLE}{'**Reasoning end**'}{RESET}",
+                #         end="\n",
+                #         flush=True,
+                #     )
+                else:
+                    pass  # do nothing, the event type is not relevant for processing
+                    # print(f"{RESET}unaccounted for message_update: ", event)
+
+            if event.get("type") == "tool_execution_start":
+                tool_name = event["toolName"]
+                args = event.get("args", {})
+                print(
+                    f"{THINKING_STYLE}**Using tool: {tool_name}**{RESET}",
+                    flush=True,
+                )
+                for k, v in args.items():
+                    fk = pformat(k, compact=True)
+                    fv = pformat(v, compact=True)
+                    print(
+                        f"{THINKING_STYLE}  {fk}: {fv}**{RESET}",
+                        flush=True,
+                    )
+
+            elif event.get("type") == "tool_execution_end":
+                tool_name = event["toolName"]
+                outcome = "failed" if event.get("isError") else "completed"
+                print(
+                    f"{THINKING_STYLE}**Tool {outcome}: {tool_name}**{RESET}",
+                    flush=True,
+                )
 
             if event.get("type") == "agent_settled":
-                print("\n")
-                print(RESET, end="", flush=True)
+                print(f"\n{RESET}")
                 break
 
-    def chat(self, raw_message: str):
+    def chat(
+        self,
+    ):
         """Send a message and render Pi's streaming response to standard output.
 
         Args:
             raw_message: The message to send to Pi.
         """
-        self._send(raw_message)  # TODO: this needs auto-detect for different types
 
-        if self._event_thread is None or not self._event_thread.is_alive():
-            self._event_thread = threading.Thread(
-                target=self._process_events,
-                daemon=True,
-            )
-            self._event_thread.start()
+        while True:
+            try:
+                print(USER_COLOR, end="", flush=True)
+                message = "nothing"
+                try:
+                    message = input(">> ")
+                    if message.strip() == "/quit":
+                        break
+                finally:
+                    print(RESET, end="\n", flush=True)
+                self._send(message)
+
+                if self._event_thread is None or not self._event_thread.is_alive():
+                    self._event_thread = threading.Thread(
+                        target=self._process_events,
+                        daemon=True,
+                    )
+                    self._event_thread.start()
+            except KeyboardInterrupt:
+                try:
+                    print(f"{ASSISTANT_COLOR}bye!")
+                finally:
+                    print(RESET, end="", flush=True)
+                break
+
+        self.teardown()
 
     def teardown(self) -> int:
         """Terminate Pi and wait for it to exit.
@@ -441,9 +556,9 @@ class PiConnector(AgentConnectorBase):
         try:
             exit_code = self.proc.wait(timeout=5)
 
-            if exit_code != 0:
+            if exit_code not in [0, 143]:
                 warnings.warn(
-                    f"Warning, Pi Agent subprocess exited with non-zero exit code {exit_code}"
+                    f"Warning, Pi Agent subprocess exited with abnormal exit code {exit_code}"
                 )
 
         except subprocess.TimeoutExpired:
@@ -459,35 +574,15 @@ if __name__ == "__main__":
             "--mode",
             "rpc",
             "--no-session",
-            "--no-skills",
+            # "--no-skills",
             "--no-prompt-templates",
             "--no-context-files",
             "--tools",
-            "read, web_search",
-            # "--extension",
+            "read, web_search, write",
             # "pi-subagents",
             # "--extension",
             # "--tools read,web-search",
         ],
     )
 
-    while True:
-        try:
-            print(USER_COLOR, end="", flush=True)
-            message = "nothing"
-            try:
-                message = input(">> ")
-                if message.strip() == "/quit":
-                    break
-            finally:
-                print(RESET, end="", flush=True)
-            pi_agent.chat(message)
-
-        except KeyboardInterrupt:
-            try:
-                print(f"{ASSISTANT_COLOR}bye!")
-            finally:
-                print(RESET, end="", flush=True)
-            break
-
-    pi_agent.teardown()
+    pi_agent.chat()
