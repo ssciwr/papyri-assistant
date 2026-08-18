@@ -1,0 +1,4 @@
+model: "todo"
+system_prompt: &sysprompt "You are a concise, helpful assistant" # TODO
+tools: TODO
+interrupt_on: TODO
