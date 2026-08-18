@@ -21,6 +21,12 @@ ERROR_COLOR = "\033[41m"
 
 PI_AGENT = None  # agent instance
 
+# TODO:
+# - integrate extension management
+# - integrate with session manager
+# - integrate with mcp -> connection to database
+# - integrate with langchain agents
+
 
 class PiMessageProcessorBase(ABC):
     """Define how processed Pi events are presented to a client."""
@@ -292,7 +298,7 @@ class PiConnector(BaseAgent):
         self.proc.stdin.flush()
 
         self.models = {}
-        for event in self._read_events():
+        for event in self.get_answers():
             if event.get("type") == "response" and event.get("success"):
                 if event.get("command") == "prompt":
                     continue
@@ -604,8 +610,8 @@ class PiConnector(BaseAgent):
             "streamingBehavior": self.streaming_behavior,
         }
 
-    def send(self, input: str):
-        """Send a serialized RPC request to the Pi process.
+    def send_message(self, input: str):
+        """send_message a serialized RPC request to the Pi process.
 
         Args:
             input: Raw user input to convert into a request.
@@ -619,7 +625,7 @@ class PiConnector(BaseAgent):
             self.proc.stdin.write(json.dumps(to_send) + "\n")
             self.proc.stdin.flush()
 
-    def _read_events(self):
+    def get_answers(self):
         """Yield decoded RPC events from the Pi process standard output.
 
         Yields:
@@ -632,7 +638,7 @@ class PiConnector(BaseAgent):
         """Read and dispatch Pi events until the current request settles."""
         # implements the control flow for event processing.
         # delegates implement treatment of events
-        for event in self._read_events():
+        for event in self.get_answers():
             if event.get("type") == "extension_ui_response":
                 self.message_processor._process_events_extension_ui_response(event)
             elif event.get("type") == "response":
@@ -681,7 +687,7 @@ class PiConnector(BaseAgent):
                         break
                 finally:
                     print(RESET, end="\n", flush=True)
-                self.send(message)
+                self.send_message(message)
 
                 if self._event_thread is None or not self._event_thread.is_alive():
                     self._event_thread = threading.Thread(

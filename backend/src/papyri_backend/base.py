@@ -19,16 +19,16 @@ class BaseAgent(ABC):
         ...
 
     @abstractmethod
-    def send(self, input: str):
-        """Send user input to the agent process.
+    def send_message(self, input: str):
+        """send_message user input to the agent process.
 
         Args:
-            input: Raw user input to send.
+            input: Raw user input to send_message.
         """
         ...
 
     @abstractmethod
-    def _read_events(self):
+    def get_answers(self):
         """Read events emitted by the agent process.
 
         Yields:
