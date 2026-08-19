@@ -53,7 +53,7 @@ class BaseAgent(ABC):
         ...
 
     @abstractmethod
-    def answer_with_chat(self, messages) -> Any:
+    def answer_with_chat(self, message) -> Any:
         """Connection point to fastAPI
 
         Args:

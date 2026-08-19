@@ -6,6 +6,7 @@ ENV PYTHONUNBUFFERED=1
 
 COPY backend/pyproject.toml backend/pyproject.toml
 COPY backend/src backend/src
+COPY backend/configs backend/configs
 RUN pip install --no-cache-dir ./backend
 
 EXPOSE 3001

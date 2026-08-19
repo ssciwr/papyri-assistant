@@ -9,7 +9,8 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from .utils.messages import NormalizedMessage, normalize_messages
-from .langchain_agent import LangChainAgent, create_agent_from_config
+from .langchain_agent import LangChainAgent
+from .langchain_agent import create_agent_from_config as make_langchain_agent
 
 
 _DEFAULT_SYSTEM_PROMPT = "You are a concise, helpful assistant."
@@ -22,48 +23,29 @@ agent = None
 async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
 
     # currently use a singleton agent b/c we only have a local usage
-    # global agent
-    # if not agent:
-    #     agent = create_agent_from_config(
-    #         os.getenv(
-    #             "AGENT_CONFIG",
-    #             str(
-    #                 Path(__file__).resolve().parents[2]
-    #                 / "configs/default_langchain_agent.yaml"
-    #             ),
-    #         )
-    #     )
+    global agent
+    if not agent:
+        try:
+            agent = make_langchain_agent(
+                os.getenv(
+                    "AGENT_CONFIG",
+                    str(
+                        Path(__file__).resolve().parents[2]
+                        / "configs/default_langchain_agent.yaml"
+                    ),
+                )
+            )
+        except Exception as e:
+            print("Exception happened in construction: ", e)
 
-    messages = normalize_messages(raw_messages)
-    last_user_message_index = _find_last_user_message_index(messages)
+    answer = {"text": "dummy"}
+    try:
+        answer = agent.answer_with_chat(raw_messages[-1])
+        print("agent answer: ", answer)
+    except Exception as e:
+        print("Exception happened in chat: ", e)
 
-    if last_user_message_index == -1:
-        raise ValueError("No user message found.")
-
-    start_index = max(0, last_user_message_index - (_MAX_CONTEXT_MESSAGES - 1))
-    window = messages[start_index : last_user_message_index + 1]
-    conversation = [_to_langchain_message(message) for message in window]
-
-    from langchain_openai import ChatOpenAI  # why here? very bad
-
-    model = ChatOpenAI(
-        model=_get_required_env(
-            "LLM_MODEL", "Set LLM_MODEL in backend/.env before using /chat."
-        ),
-        temperature=0.2,
-        **_provider_kwargs(),
-    )
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", _DEFAULT_SYSTEM_PROMPT),
-            MessagesPlaceholder("messages"),
-        ]
-    )
-    chain = prompt | model
-
-    response = await chain.ainvoke({"messages": conversation})
-
-    return {"text": _stringify_model_content(response.content)}
+    return {"text": _stringify_model_content(answer)}
 
 
 def _provider_kwargs() -> dict[str, str]:

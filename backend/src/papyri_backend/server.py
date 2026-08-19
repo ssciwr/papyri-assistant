@@ -14,7 +14,14 @@ from .settings import load_environment
 
 load_environment()
 
+# TODO:
+# - build agent singleton for the moment. Session manager + user later
+# -
+# -
+agent = None
 
+
+# TODO: need more complex data models for tool results and stuff
 class ChatRequest(BaseModel):
     messages: list[Any] = Field(min_length=1)
 
@@ -59,7 +66,9 @@ async def health() -> dict[str, bool]:
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> JSONResponse | dict[str, str]:
     try:
-        return await answer_with_chat(request.messages)
+        answer = await answer_with_chat(request.messages)
+        print("answer: ", answer)
+        return answer
     except Exception as exc:
         message = str(exc) or "Unexpected error"
         return JSONResponse(status_code=500, content={"error": message})

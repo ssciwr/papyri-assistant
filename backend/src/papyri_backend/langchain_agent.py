@@ -15,6 +15,7 @@ from langchain.agents.middleware import (
     LLMToolSelectorMiddleware,
 )
 import yaml
+from pprint import pprint
 
 from .base import BaseAgent
 from .message_processor import MessageProcessorTerminal
@@ -112,8 +113,6 @@ class LangChainAgent(BaseAgent):
                 self._build_permission(permission_def)
                 for permission_def in agent_kwargs["permissions"] or []
             ]
-
-        print("agent_kwargs: ", list(agent_kwargs.keys()))
 
         self.agent = create_deep_agent(**agent_kwargs)
         self.thread_id = str(uuid.uuid4())
@@ -232,44 +231,20 @@ class LangChainAgent(BaseAgent):
             return
 
         # This takes care of the interleaving of steering messages
+        # TODO: looks weird. not sure this is  necessary
         pending, self._pending = (
             self._pending,
             None,
-        )  # what the hell is that? this is looks like a big Anti-pattern? self._pending = "pending input"
+        )
+
+        # TODO: I am not too happy that this here sends requests. I think this architecture is way too complicated for what I am trying to do
         self._run = self.agent.stream_events(
             pending,
             config=self._config,
-            version="v3",
+            version="v3",  # TODO: is this necessary?
         )
 
         yield from self._run.messages  # answer buffer
-
-    def _process_events_message(self, message):
-        """Print one model message as it streams in.
-
-        Raw protocol events are iterated rather than the ``text`` and
-        ``reasoning`` projections, because both projections only finish at the
-        end of the message; draining either one would buffer the whole message
-        instead of printing it as it arrives.
-
-        Args:
-            message: A ``ChatModelStream`` for a single model call.
-        """
-        for event in message:
-            if event.get("event") != "content-block-delta":
-                continue
-
-            delta = event.get("delta") or {}
-
-            if delta.get("type") == "text-delta":
-                self.message_processor.process_answer_message(delta.get("text", ""))
-            elif delta.get("type") == "reasoning-delta":
-                self.message_processor.process_thinking_message(
-                    delta.get("reasoning", "")
-                )
-
-        for tool_call in message.tool_calls.get() or []:
-            self._process_events_tool_call(tool_call)
 
     def _process_events_tool_call(self, tool_call):
         """Print the name and arguments of a requested tool call.
@@ -408,6 +383,33 @@ class LangChainAgent(BaseAgent):
 
             return edited
 
+    def _process_events_message(self, message):
+        """Print one model message as it streams in.
+
+        Raw protocol events are iterated rather than the ``text`` and
+        ``reasoning`` projections, because both projections only finish at the
+        end of the message; draining either one would buffer the whole message
+        instead of printing it as it arrives.
+
+        Args:
+            message: A ``ChatModelStream`` for a single model call.
+        """
+        for event in message:
+            if event.get("event") != "content-block-delta":
+                continue
+
+            delta = event.get("delta") or {}
+
+            if delta.get("type") == "text-delta":
+                self.message_processor.process_answer_message(delta.get("text", ""))
+            elif delta.get("type") == "reasoning-delta":
+                self.message_processor.process_thinking_message(
+                    delta.get("reasoning", "")
+                )
+
+        for tool_call in message.tool_calls.get() or []:
+            self._process_events_tool_call(tool_call)
+
     def process_events(self):
         """Drive the staged run to completion, pausing for interrupts."""
         # implements the control flow for event processing.
@@ -421,17 +423,57 @@ class LangChainAgent(BaseAgent):
             if self._run.interrupted:
                 self._process_interrupt()
 
-    def answer_with_chat(self, messages) -> Any:
+    def answer_with_chat(self, message) -> Any:
         """_summary_
 
         Args:
-            messages (_type_): _description_
+            message (_type_): _description_
 
         Returns:
             Any: _description_
         """
         # TODO. This needs to become the thing fastAPI builds on
-        ...
+        # - eats list of json or text through messageprocessor
+        # - makes it pending
+        # then let's get_answers do its thing
+        # then do all the other stuff
+
+        print("incoming messages")
+        pprint(message)
+        self.send_message(message["content"][0]["text"])
+
+        # compose message:
+        full_answer = []
+        full_reasoning = []
+        while self._pending is not None:
+            for answer in self.get_answers():
+                for event in answer:
+                    if event.get("event") != "content-block-delta":
+                        continue
+                    delta = event.get("delta") or {}
+                    print("type: ", delta.get("type"))
+                    if delta.get("type") == "text-delta":
+                        full_answer.append(delta.get("text", ""))
+                    elif delta.get("type") == "reasoning-delta":
+                        full_reasoning.append(delta.get("reasoning", ""))
+
+        # TODO: understand the meaning of this
+
+        # for tool_call in message.tool_calls.get() or []:
+        #     self._process_events_tool_call(tool_call)
+        full_answer = "".join(full_answer)
+        print("answer: ")
+        pprint(full_answer)
+
+        full_reasoning = "".join(full_reasoning)
+        print("reasoning: ")
+        pprint(full_reasoning)
+
+        # TODO: understand the meaning of this and how it handles tools
+        if self._run.interrupted:
+            self._process_interrupt()
+
+        return {"text": full_answer}
 
     def run(
         self,

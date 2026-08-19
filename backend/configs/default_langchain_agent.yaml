@@ -1,25 +1,3 @@
-# Keyword arguments for deepagents.create_deep_agent, as consumed by
-# LangChainAgent.from_config (papyri_backend.langchain_agent).
-#
-# Conventions used below:
-#   - plain scalars/lists are passed through as they are
-#   - a mapping with a "type" key names a Python object by dotted path; the
-#     optional "kwargs" mapping is passed to it, i.e.
-#         type: pkg.mod.Object
-#         kwargs: {a: 1}
-#     becomes  pkg.mod.Object(a=1)
-#     (drop "kwargs" to pass the object itself rather than an instance)
-#   - "${VAR}" is read from the environment, which settings.load_environment()
-#     populates from backend/.env
-#
-# Anything commented out is a kwarg create_deep_agent accepts but this setup
-# does not use yet; the comment records what it expects.
-
-# The chat model. Both ollama and vllm serve an OpenAI-compatible API, so
-# ChatOpenAI with base_url pointed at the local server covers both; the model
-# name itself comes from .env and is not pinned here.
-# (langchain_ollama.ChatOllama is the alternative if ollama-only features are
-# needed; a "provider:model" string such as "ollama:qwen3" also works.)
 model:
   type: langchain_openai.ChatOpenAI
   kwargs:
@@ -29,11 +7,10 @@ model:
 # Caller-authored system instructions, placed before the deepagents base prompt.
 system_prompt: &sysprompt "You are a concise, helpful assistant" # TODO
 
-# Extra tools, by dotted path, merged with the built-ins (ls, read_file,
-# write_file, edit_file, glob, grep, execute, task). Additive only.
-# TODO: the database tools arrive here once the MCP client is wired up
-# (langchain_mcp_adapters), which needs an async load rather than a dotted path.
-tools: []
+# tools:
+#   - ls
+#   - grep
+#   - find
 
 middleware:
   - type: langchain.agents.middleware.SummarizationMiddleware
@@ -44,11 +21,6 @@ middleware:
   - type: langchain.agents.middleware.TodoListMiddleware
     kwargs: {}
 
-# Tools the run pauses on for human review. A value of true allows every
-# decision; a mapping restricts them. Allowed decisions are
-# approve | edit | reject | respond, and LangChainAgent renders them as the
-# numbered menu in _process_action_request.
-# interrupt on all call? How does steering actually work in langgraph
 interrupt_on:
   write_file:
     allowed_decisions: ["approve", "edit", "reject"]
@@ -57,15 +29,6 @@ interrupt_on:
   execute: # only ever fires with a sandbox backend; see "backend" below
     allowed_decisions: ["approve", "reject"]
 
-# Filesystem access rules, evaluated in order: the first rule whose operations
-# and paths match decides (mode: allow | deny | interrupt), and anything matched
-# by no rule is allowed. Deny rules therefore have to come before the allow rule
-# that would otherwise cover them. Drop the section entirely to keep the
-# deepagents default of a free filesystem.
-#
-# Paths are globs and must be absolute; "~" and "$VAR" are expanded by
-# LangChainAgent before the rule is built, because FilesystemPermission itself
-# rejects both.
 permissions:
   - type: deepagents.FilesystemPermission
     kwargs:
