@@ -2,7 +2,7 @@ import importlib
 from typing import Any
 
 
-def load_type(path: Any) -> type:
+def load_type(path: Any) -> Any:
     """Resolve a dotted import path to the object it identifies.
 
     Args:
