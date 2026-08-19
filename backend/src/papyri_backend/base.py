@@ -37,7 +37,7 @@ class BaseAgent(ABC):
         ...
 
     @abstractmethod
-    def chat(
+    def run(
         self,
     ):
         """Run the interactive prompt-and-response loop."""
@@ -49,6 +49,16 @@ class BaseAgent(ABC):
 
         Returns:
             The process exit code.
+        """
+        ...
+
+    @abstractmethod
+    def answer_with_chat(self, messages) -> Any:
+        """Connection point to fastAPI
+
+        Args:
+            messages (list[str]): incoming messages
+
         """
         ...
 
