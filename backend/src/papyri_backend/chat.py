@@ -3,17 +3,37 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from typing import Any
+from pathlib import Path
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from .utils.messages import NormalizedMessage, normalize_messages
+from .langchain_agent import LangChainAgent, create_agent_from_config
+
 
 _DEFAULT_SYSTEM_PROMPT = "You are a concise, helpful assistant."
 _MAX_CONTEXT_MESSAGES = 9
 
 
+agent = None
+
+
 async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
+
+    # currently use a singleton agent b/c we only have a local usage
+    # global agent
+    # if not agent:
+    #     agent = create_agent_from_config(
+    #         os.getenv(
+    #             "AGENT_CONFIG",
+    #             str(
+    #                 Path(__file__).resolve().parents[2]
+    #                 / "configs/default_langchain_agent.yaml"
+    #             ),
+    #         )
+    #     )
+
     messages = normalize_messages(raw_messages)
     last_user_message_index = _find_last_user_message_index(messages)
 
@@ -24,7 +44,7 @@ async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
     window = messages[start_index : last_user_message_index + 1]
     conversation = [_to_langchain_message(message) for message in window]
 
-    from langchain_openai import ChatOpenAI
+    from langchain_openai import ChatOpenAI  # why here? very bad
 
     model = ChatOpenAI(
         model=_get_required_env(
