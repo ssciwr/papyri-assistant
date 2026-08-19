@@ -51,3 +51,34 @@ class BaseAgent(ABC):
             The process exit code.
         """
         ...
+
+
+class MessageProcessorBase(ABC):
+    """Define how processed Pi events are presented to a client."""
+
+    @abstractmethod
+    def process_system_message(self, message): ...
+
+    @abstractmethod
+    def process_tool_message(self, message): ...
+
+    @abstractmethod
+    def process_answer_message(self, message): ...
+
+    @abstractmethod
+    def process_user_input(self, message) -> str: ...
+
+    @abstractmethod
+    def process_input_failure(self, input): ...
+
+    @abstractmethod
+    def process_thinking_message(self, message): ...
+
+    @abstractmethod
+    def process_error(self, message): ...
+
+    @abstractmethod
+    def set_output_config(self): ...
+
+    @abstractmethod
+    def reset_output_config(self): ...
