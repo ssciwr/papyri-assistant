@@ -10,7 +10,9 @@ from pprint import pformat
 import threading
 from abc import ABC, abstractmethod
 from pathlib import Path
-from .base import BaseAgent
+
+from .base import BaseAgent, MessageProcessorBase
+from .message_processor import MessageProcessorTerminal
 
 USER_COLOR = "\033[36m"  # cyan
 ASSISTANT_COLOR = "\x1b[35m"  # magenta
@@ -35,7 +37,7 @@ class PiConnector(BaseAgent):
         self,
         options_to_pass: list[str],
         subprocess_kwargs: dict[str, Any] | None = None,
-        message_processor: type[PiMessageProcessorBase] = PiMessageProcessorTerminal,
+        message_processor: type[MessageProcessorBase] = MessageProcessorTerminal,
     ):
         """Start a Pi RPC subprocess.
 
