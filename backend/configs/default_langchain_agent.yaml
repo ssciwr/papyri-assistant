@@ -35,6 +35,15 @@ system_prompt: &sysprompt "You are a concise, helpful assistant" # TODO
 # (langchain_mcp_adapters), which needs an async load rather than a dotted path.
 tools: []
 
+middleware:
+  - type: langchain.agents.middleware.SummarizationMiddleware
+    kwargs: {}
+  # - type: langchain.agents.middleware.HumanInTheLoopMiddleware
+  #   args: []
+  #   kwargs: {}
+  - type: langchain.agents.middleware.TodoListMiddleware
+    kwargs: {}
+
 # Tools the run pauses on for human review. A value of true allows every
 # decision; a mapping restricts them. Allowed decisions are
 # approve | edit | reject | respond, and LangChainAgent renders them as the
@@ -48,12 +57,26 @@ interrupt_on:
   execute: # only ever fires with a sandbox backend; see "backend" below
     allowed_decisions: ["approve", "reject"]
 
-# Filesystem access rules, evaluated in order (mode: allow | deny | interrupt).
-# Off by default so the agent keeps the deepagents default of a free filesystem;
-# enable to fence it into the project.
-# permissions:
-#   - {operations: ["read", "write"], paths: ["**"], mode: "allow"}
-#   - {operations: ["write"], paths: ["/etc/**", "~/.ssh/**"], mode: "deny"}
+# Filesystem access rules, evaluated in order: the first rule whose operations
+# and paths match decides (mode: allow | deny | interrupt), and anything matched
+# by no rule is allowed. Deny rules therefore have to come before the allow rule
+# that would otherwise cover them. Drop the section entirely to keep the
+# deepagents default of a free filesystem.
+#
+# Paths are globs and must be absolute; "~" and "$VAR" are expanded by
+# LangChainAgent before the rule is built, because FilesystemPermission itself
+# rejects both.
+permissions:
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["write"]
+      paths: ["/etc/**", "~/.ssh/**"]
+      mode: "deny"
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["read", "write"]
+      paths: ["~/Development/**"]
+      mode: "allow"
 
 # Named subagents the "task" tool can delegate to. Each entry needs name,
 # description and system_prompt, and may add tools/model/interrupt_on.
@@ -64,12 +87,17 @@ interrupt_on:
 #   langgraph.checkpoint.memory.InMemorySaver when none is given, because
 #   interrupts cannot be resumed without one. Set it here to persist threads,
 #   e.g. type: langgraph.checkpoint.sqlite.SqliteSaver
+
 # store: BaseStore for cross-thread state, required by the "memory" kwarg below
+
 # memory: list of AGENTS.md-style files loaded as persistent context
+
 # skills: list of skill directories exposed to the agent
-# middleware: extra langchain middleware, inserted after the deepagents stack
+
 # backend: filesystem backend; defaults to an in-state one, so files live in
 #   graph state and "execute" returns an error until a sandbox backend is set
+
 # response_format: structured-output strategy for the final answer
+
 # state_schema / context_schema: custom DeepAgentState / runtime context types
 # name, debug, cache: graph name, verbose tracing, and a langgraph cache

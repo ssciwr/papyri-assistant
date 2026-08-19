@@ -1,30 +1,66 @@
 """Provide a connector for deepagents agents driven by LangGraph's v3 event stream."""
 
 import json
+import os
 import uuid
 from pprint import pformat
 from typing import Any
 from collections.abc import Mapping
-
+from pathlib import Path
 from deepagents import create_deep_agent
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
+from langchain.agents.middleware import (
+    SummarizationMiddleware,
+    LLMToolSelectorMiddleware,
+)
+import yaml
 
 from .base import BaseAgent
+from .message_processor import MessageProcessorTerminal
 from .utils import utils
-
-
-# USER_COLOR = "\033[36m"  # cyan
-# ASSISTANT_COLOR = "\x1b[35m"  # magenta
-# SYSTEM_COLOR = "\033[33m"  # amber
-# RESET = "\033[0m"
-# THINKING_STYLE = "\033[3;32m"  # italic green
-# ERROR_COLOR = "\033[41m"
-
 
 # TODO:
 # - integrate with mcp -> connection to database
-# - integrate subagents
+# - integrate subagents into fastAPI
+
+
+def create_agent_from_config(path: str):
+    """TODO
+
+    Args:
+        path (str): TODO
+
+    Returns:
+        _type_: TODO
+    """
+
+    with open(Path(path).resolve(), "r") as f:
+        config = yaml.safe_load(f)
+
+    # recurse
+    def _process_config(value: Any):
+        if isinstance(value, list):
+            result = []
+            for element in value:
+                result.append(_process_config(element))
+            return result
+
+        elif isinstance(value, dict):
+            result = {}
+            for i in value:
+                result[i] = _process_config(
+                    value[i],
+                )  # TODO: recursion is wrong, need one in list as well
+            return result
+        else:
+            return utils.load_type(value)
+
+    cfg = {}
+    for k, v in config.items():
+        cfg[k] = _process_config(v)
+
+    return LangChainAgent([], kwargs=cfg)
 
 
 class LangChainAgent(BaseAgent):
@@ -34,7 +70,7 @@ class LangChainAgent(BaseAgent):
         self,
         options_to_pass: list[str],
         kwargs: dict[str, Any] | None = None,
-        message_processor_type: str | None = None,
+        message_processor_type: type | None = None,
         message_processor_args: list[Any] | None = None,
         message_processor_kwargs: Mapping[str, Any] | None = None,
     ):
@@ -46,6 +82,8 @@ class LangChainAgent(BaseAgent):
                 built in-process from keyword arguments instead.
             kwargs: Keyword arguments for ``create_deep_agent``, such as
                 ``model``, ``tools``, ``system_prompt`` and ``interrupt_on``.
+                ``middleware`` and ``permissions`` are given as
+                ``{"type": ..., "kwargs": {...}}`` entries and instantiated here.
                 A ``checkpointer`` is added when none is supplied, because
                 interrupts cannot be resumed without one.
         """
@@ -56,21 +94,86 @@ class LangChainAgent(BaseAgent):
             "checkpointer", InMemorySaver()
         )  # TODO: make the checkpointer configurable
 
-        agent_kwargs["model"]["kwargs"].setdefault("model", os.getenv("LLM_MODEL"))
-        agent_kwargs["model"]["kwargs"].setdefault("base_url", os.getenv("LLM_API_URL"))
-        agent_kwargs["model"]["kwargs"].setdefault(
-            "api_key", os.getenv("LLM_API_KEY", "EMPTY")
-        )
+        model = agent_kwargs.get("model")
+        if isinstance(model, Mapping):
+            model_kwargs = dict(model.get("kwargs") or {})
+            model_kwargs.setdefault("model", os.getenv("LLM_MODEL"))
+            model_kwargs.setdefault("base_url", os.getenv("LLM_API_URL"))
+            model_kwargs.setdefault("api_key", os.getenv("LLM_API_KEY", "EMPTY"))
+            agent_kwargs["model"] = model["type"](**model_kwargs)
+
+        agent_kwargs["middleware"] = [
+            self._build_middleware(middleware_def, agent_kwargs.get("model"))
+            for middleware_def in agent_kwargs.get("middleware") or []
+        ]
+
+        if "permissions" in agent_kwargs:
+            agent_kwargs["permissions"] = [
+                self._build_permission(permission_def)
+                for permission_def in agent_kwargs["permissions"] or []
+            ]
+
+        print("agent_kwargs: ", list(agent_kwargs.keys()))
 
         self.agent = create_deep_agent(**agent_kwargs)
-
         self.thread_id = str(uuid.uuid4())
         self._pending: dict[str, Any] | Command | None = None
         self._run: Any | None = None
 
-        self.message_processor = utils.load_type(message_processor_type)(
+        processor_type = (
+            utils.load_type(message_processor_type) or MessageProcessorTerminal
+        )
+        self.message_processor = processor_type(
             *(message_processor_args or []), **(message_processor_kwargs or {})
         )
+
+    @staticmethod
+    def _build_middleware(middleware_def: Mapping[str, Any], model: Any) -> Any:
+        """Build one middleware from its config entry.
+
+        Args:
+            middleware_def: A ``{"type": ..., "kwargs": {...}}`` mapping, where
+                the type is a middleware class such as
+                ``langchain.agents.middleware.TodoListMiddleware``.
+            model: The agent's chat model, handed to the middlewares that run a
+                model of their own instead of the agent's.
+
+        Returns:
+            The instantiated middleware, ready to hand to ``create_deep_agent``.
+        """
+        middleware_type = utils.load_type(middleware_def["type"])
+        middleware_kwargs = dict(middleware_def.get("kwargs") or {})
+
+        # some middleware needs a model being passed explicitly
+        if middleware_type in (SummarizationMiddleware, LLMToolSelectorMiddleware):
+            middleware_kwargs.setdefault("model", model)
+
+        return middleware_type(**middleware_kwargs)
+
+    @staticmethod
+    def _build_permission(permission_def: Mapping[str, Any]) -> Any:
+        """Build one filesystem access rule from its config entry.
+
+        Args:
+            permission_def: A ``{"type": ..., "kwargs": {...}}`` mapping, where
+                the type is a permission class such as
+                ``deepagents.FilesystemPermission``.
+
+        Returns:
+            The instantiated rule, ready to hand to ``create_deep_agent``.
+        """
+        permission_type = utils.load_type(permission_def["type"])
+        permission_kwargs = dict(permission_def.get("kwargs") or {})
+
+        # FilesystemPermission insists on absolute paths and rejects "~", so the
+        # shell-style shorthands a config is written with are resolved here.
+        if "paths" in permission_kwargs:
+            permission_kwargs["paths"] = [
+                os.path.expanduser(os.path.expandvars(path))
+                for path in permission_kwargs["paths"]
+            ]
+
+        return permission_type(**permission_kwargs)
 
     @property
     def _config(
@@ -82,43 +185,6 @@ class LangChainAgent(BaseAgent):
             A config carrying the thread id the checkpointer keys state on.
         """
         return {"configurable": {"thread_id": self.thread_id}}
-
-    @classmethod
-    def from_config(cls, config: dict[str, Any]) -> "LangChainAgent":
-        """Build a new agent from config dictionary containing all needed kwargs.
-
-        Args:
-            config (dict[str, Any]): Needed kwargs. May contain python types/entities as dotted path strings
-            pointing to modules, e.g. "moduleA.moduleB.class". This will be resolved to moduleA.moduleB.class
-            and imported via importlib
-
-        Returns:
-            LangChainAgent: Newly created LangChainAgent instance, built from the supplied kwargs
-        """
-
-        # recurse
-        def _process_config(value: Any):
-            if isinstance(value, list):
-                result = []
-                for element in value:
-                    result.append(_process_config(element))
-                return result
-
-            elif isinstance(value, dict):
-                result = {}
-                for i in value:
-                    result[i] = _process_config(
-                        value[i],
-                    )  # TODO: recursion is wrong, need one in list as well
-                return result
-            else:
-                return utils.load_type(value)
-
-        cfg = {}
-        for k, v in config.items():
-            cfg[k] = _process_config(v)
-
-        return cls([], kwargs=cfg)
 
     def _process_input_message(self, user_input: str):
         """Convert user input into an input payload.
@@ -196,18 +262,8 @@ class LangChainAgent(BaseAgent):
             delta = event.get("delta") or {}
 
             if delta.get("type") == "text-delta":
-                # print(
-                #     f"{ASSISTANT_COLOR}{delta.get('text', '')}{RESET}",
-                #     end="",
-                #     flush=True,
-                # )
                 self.message_processor.process_answer_message(delta.get("text", ""))
             elif delta.get("type") == "reasoning-delta":
-                # print(
-                #     f"{THINKING_STYLE}{delta.get('reasoning', '')}{RESET}",
-                #     end="",
-                #     flush=True,
-                # )
                 self.message_processor.process_thinking_message(
                     delta.get("reasoning", "")
                 )
@@ -221,10 +277,6 @@ class LangChainAgent(BaseAgent):
         Args:
             tool_call: A finalized tool call emitted by the model.
         """
-        # print(
-        #     f"\n{THINKING_STYLE}**Using tool: {tool_call.get('name')}**{RESET}",
-        #     flush=True,
-        # )
         self.message_processor.process_thinking_message(
             f"**Using tool: {tool_call.get('name')}"
         )
@@ -233,10 +285,6 @@ class LangChainAgent(BaseAgent):
         for k, v in (tool_call.get("args") or {}).items():
             fk = pformat(k, compact=True)
             fv = pformat(v, compact=True)
-            # print(
-            #     f"{THINKING_STYLE}  {fk}: {fv}**{RESET}",
-            #     flush=True,
-            # )
             self.message_processor.process_thinking_message(f"  {fk}: {fv}**")
 
     def _process_interrupt(self):
@@ -271,21 +319,17 @@ class LangChainAgent(BaseAgent):
         """
         allowed = config["allowed_decisions"]
 
-        # print(f"\n{SYSTEM_COLOR}The agent wants to run: {action['name']}{RESET}")
         self.message_processor.process_system_message(
             f"\nThe agent wants to run: {action['name']}"
         )
         if action.get("description"):
-            # print(f"{SYSTEM_COLOR}{action['description']}{RESET}")
             self.message_processor.process_system_message(f"{action['description']}")
         for k, v in (action.get("args") or {}).items():
-            # print(f"{SYSTEM_COLOR}  {pformat(k)}: {pformat(v)}{RESET}")
             self.message_processor.process_system_message(
                 f"  {pformat(k)}: {pformat(v)}"
             )
 
         for index, decision_type in enumerate(allowed, start=1):
-            # print(f"{SYSTEM_COLOR}  {index} {decision_type}{RESET}")
             self.message_processor.process_system_message(f"  {index} {decision_type}")
 
         decision_type = self._ask_decision_type(allowed)
@@ -303,7 +347,6 @@ class LangChainAgent(BaseAgent):
             }
 
         if decision_type == "reject":
-            # message = input(f"{USER_COLOR}reason (optional) >> {RESET}").strip()
             message = self.message_processor.process_user_input(
                 "reason (optional) >> "
             ).strip()
@@ -315,7 +358,6 @@ class LangChainAgent(BaseAgent):
 
         message = ""
         while not message:
-            # message = input(f"{USER_COLOR}response to the agent >> {RESET}").strip()
             message = self.message_processor.process_user_input(
                 "response to the agent >> "
             ).strip()
@@ -331,11 +373,9 @@ class LangChainAgent(BaseAgent):
             The chosen decision type.
         """
         while True:
-            # choice = input(f"{USER_COLOR}choice >> {RESET}").strip()
             choice = self.message_processor.process_user_input("choice >> ").strip()
             if choice.isdigit() and 1 <= int(choice) <= len(allowed):
                 return allowed[int(choice) - 1]
-            # print(f"{ERROR_COLOR}Pick a number between 1 and {len(allowed)}.{RESET}")
             self.message_processor.process_error(
                 f"Pick a number between 1 and {len(allowed)}"
             )
@@ -350,23 +390,19 @@ class LangChainAgent(BaseAgent):
             The replacement arguments.
         """
         # what is this about? check docs
-        # print(f"{SYSTEM_COLOR}current args: {json.dumps(args)}{RESET}")
         self.message_processor.process_system_message(
             f"current args: {json.dumps(args)}"
         )
 
         while True:
-            # raw = input(f"{USER_COLOR}edited args (JSON) >> {RESET}").strip()
             raw = self.message_processor.process_user_input("edited args (JSON) >> ")
             try:
                 edited = json.loads(raw)
             except json.JSONDecodeError as exc:
-                # print(f"{ERROR_COLOR}Not valid JSON: {exc}{RESET}")
                 self.message_processor.process_error(f"Not valid JSON: {exc}")
                 continue
 
             if not isinstance(edited, dict):
-                # print(f"{ERROR_COLOR}Args must be a JSON object.{RESET}")
                 self.message_processor.process_error("Args must be a JSON object.")
                 continue
 
@@ -380,27 +416,37 @@ class LangChainAgent(BaseAgent):
             for message in self.get_answers():
                 self._process_events_message(message)
 
-            # print(f"\n{RESET}", end="", flush=True)
             self.message_processor.reset_output_config()
 
             if self._run.interrupted:
                 self._process_interrupt()
 
-    def chat(
+    def answer_with_chat(self, messages) -> Any:
+        """_summary_
+
+        Args:
+            messages (_type_): _description_
+
+        Returns:
+            Any: _description_
+        """
+        # TODO. This needs to become the thing fastAPI builds on
+        ...
+
+    def run(
         self,
     ):
         """Run an interactive loop and render the agent's streaming responses."""
 
         while True:
             try:
-                # print(USER_COLOR, end="", flush=True)
+                # this part must go into the answer_with_chat function
+                # the message_processor must do the formatting and stuff.
                 self.message_processor.set_output_config()
 
                 try:
-                    # message = input(">> ")
                     message = self.message_processor.process_user_input(">> ")
                 finally:
-                    # print(RESET, end="\n", flush=True)
                     self.message_processor.reset_output_config()
 
                 stripped = message.strip()
@@ -412,7 +458,6 @@ class LangChainAgent(BaseAgent):
 
                 if stripped == "/new":
                     self.thread_id = str(uuid.uuid4())
-                    # print(f"{SYSTEM_COLOR}new session started{RESET}", flush=True)
                     self.message_processor.process_system_message("new session started")
                     continue
 
@@ -422,16 +467,12 @@ class LangChainAgent(BaseAgent):
                     self.process_events()
                 except Exception as exc:
                     self._pending = None
-                    # print(
-                    #     f"{ERROR_COLOR}The agent run failed: {exc}{RESET}", flush=True
-                    # )
+
                     self.message_processor.process_error(f"The agent run failed: {exc}")
             except KeyboardInterrupt:
                 try:
-                    # print(f"{ASSISTANT_COLOR}bye!")
                     self.message_processor.process_answer_message("bye!")
                 finally:
-                    # print(RESET, end="", flush=True)
                     self.message_processor.reset_output_config()
 
                 break
@@ -450,30 +491,3 @@ class LangChainAgent(BaseAgent):
             self._run = None
 
         return 0
-
-
-if __name__ == "__main__":
-    import os
-    from langchain_openai import ChatOpenAI
-
-    from .settings import load_environment
-
-    # Experimental entry point for trying the connector out by hand. Reads the
-    # same LLM_* variables as the rest of the backend, so it talks to whichever
-    # OpenAI-compatible endpoint .env points at.
-    load_environment()
-
-    langchain_agent = LangChainAgent(
-        [],
-        {
-            "model": ChatOpenAI(
-                model=os.environ["LLM_MODEL"],
-                api_key=os.environ.get("LLM_API_KEY", "EMPTY"),
-                base_url=os.getenv("LLM_API_URL"),
-            ),
-            "system_prompt": "You are a concise, helpful assistant",
-            "interrupt_on": {"write_file": True},
-        },
-    )
-
-    langchain_agent.chat()
