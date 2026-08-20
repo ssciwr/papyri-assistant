@@ -55,8 +55,10 @@ class MessageProcessorTerminal(MessageProcessorBase):
             flush=True,
         )
 
-    def process_interrupt_message(self, option: str, indicator: str):
-        self.process_system_message(option)
+    def process_interrupt_message(self, decision: str):
+        # A terminal prompt that wants a hotkey can derive it from decision[0];
+        # the letter is not worth transporting.
+        self.process_system_message(decision)
 
     def set_output_config(self):
         print(self.USER_COLOR, end="", flush=True)
@@ -72,13 +74,17 @@ class MessageProcessorFastAPI(MessageProcessorBase):
         self.full_answer = ""
         self.full_reasoning = ""
         self.full_error = ""
-        self.full_options: dict[str, str] = {}
+        self.full_options: list[str] = []
 
     def process_system_message(self, message: str):
         self.process_answer_message(message)
 
-    def process_interrupt_message(self, option: str, indicator: str):
-        self.full_options[option.strip()] = indicator.strip()
+    def process_interrupt_message(self, decision: str):
+        # Only one action's decisions reach here today, so nothing repeats. The
+        # guard keeps that true once several paused actions are collected at once.
+        decision = decision.strip()
+        if decision not in self.full_options:
+            self.full_options.append(decision)
 
     def process_tool_message(self, message: dict[str, Any]):
         name = message.get("name")
@@ -128,7 +134,10 @@ class MessageProcessorFastAPI(MessageProcessorBase):
         self.full_answer = ""
         self.full_reasoning = ""
         self.full_error = ""
-        self.full_options = {}
+        # Rebound rather than cleared on purpose: run_single_turn hands the
+        # collected options to its caller before resetting, and that reference
+        # has to keep them.
+        self.full_options = []
         # self._reasoning_split = False
 
     def set_output_config(self):

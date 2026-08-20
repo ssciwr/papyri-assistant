@@ -417,10 +417,7 @@ class LangChainAgent(BaseAgent):
                     "Please decide how you want to proceed:\n"
                 )
                 for decision_type in allowed:
-                    self.message_processor.process_interrupt_message(
-                        f"{decision_type[0].upper()}**{decision_type[1::]}",
-                        f"{decision_type[0].upper()}",
-                    )
+                    self.message_processor.process_interrupt_message(decision_type)
 
     def run_single_turn(self, message) -> dict[str, str]:
         """Run one turn for a single incoming message.

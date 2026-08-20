@@ -97,4 +97,12 @@ class MessageProcessorBase(ABC):
     def reset_output_config(self): ...
 
     @abstractmethod
-    def process_interrupt_message(self, option: str, indicator: str): ...
+    def process_interrupt_message(self, decision: str):
+        """Present one decision the agent will accept for a paused action.
+
+        Args:
+            decision: A verbatim element of the action's ``allowed_decisions``,
+                such as ``"approve"``. Clients format it for display themselves,
+                because the token is what has to travel back to the agent.
+        """
+        ...

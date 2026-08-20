@@ -457,3 +457,85 @@ textarea {
     width: 100%;
   }
 }
+
+.decision-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(31, 41, 55, 0.45);
+}
+
+.decision-dialog {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid #ddd6c8;
+  border-radius: 8px;
+  background: #fffdf8;
+  box-shadow: 0 12px 32px rgba(31, 41, 55, 0.22);
+}
+
+.decision-title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.decision-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.decision-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #d8d1c4;
+  border-radius: 6px;
+  background: #fbfaf6;
+  cursor: pointer;
+  font-size: 0.94rem;
+}
+
+/* Decisions arrive as lowercase tokens ("approve"); the casing is display-only. */
+.decision-option span {
+  text-transform: capitalize;
+}
+
+.decision-args {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d8d1c4;
+  border-radius: 6px;
+  background: #ffffff;
+  resize: vertical;
+}
+
+.decision-args:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.decision-submit {
+  align-self: flex-end;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #b4532a;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.decision-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}

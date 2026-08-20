@@ -2,6 +2,7 @@ import { MarkGithubIcon } from "@primer/octicons-react";
 import { RuntimeProvider } from "./assistantRuntime";
 import { ChatExportButton } from "./components/ChatExportButton";
 import { ChatThread } from "./components/ChatThread";
+import { DecisionDialog } from "./components/DecisionDialog";
 
 const warningBannerText =
   import.meta.env.VITE_WARNING_BANNER_TEXT?.trim() ?? "";
@@ -49,6 +50,7 @@ export function App() {
           <ChatThread />
         </section>
       </main>
+      <DecisionDialog />
     </RuntimeProvider>
   );
 }
