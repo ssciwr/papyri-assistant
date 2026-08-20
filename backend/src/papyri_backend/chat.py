@@ -36,11 +36,14 @@ async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
                 )
             )
         except Exception as e:
-            answer_text = f"Exception happened in agent construction: {e}"
+            return {
+                "text": f"Exception happened in agent construction: {e}",
+                "reasoning": "",
+            }
 
     try:
         answer = agent.run_single_turn(raw_messages[-1])
     except Exception as e:
         answer = {"text": f"Exception happened in chat: {e}", "reasoning": ""}
 
-    return {"text": answer["text"], "reasoning": answer["reasoning"]}
+    return answer

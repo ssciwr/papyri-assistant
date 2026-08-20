@@ -2,6 +2,7 @@ import re
 
 from .base import MessageProcessorBase
 from collections.abc import Sequence
+from typing import Any
 
 # Models that reason inline mark the trace as ordinary answer text instead of
 # emitting reasoning events. The tags are matched leniently because whitespace
@@ -54,6 +55,9 @@ class MessageProcessorTerminal(MessageProcessorBase):
             flush=True,
         )
 
+    def process_interrupt_message(self, option: str, indicator: str):
+        self.process_system_message(option)
+
     def set_output_config(self):
         print(self.USER_COLOR, end="", flush=True)
 
@@ -68,31 +72,34 @@ class MessageProcessorFastAPI(MessageProcessorBase):
         self.full_answer = ""
         self.full_reasoning = ""
         self.full_error = ""
-        # self._reasoning_split = False
+        self.full_options: dict[str, str] = {}
 
     def process_system_message(self, message: str):
         self.process_answer_message(message)
 
-    def process_tool_message(self, message: str):
-        self.process_answer_message(message)
+    def process_interrupt_message(self, option: str, indicator: str):
+        self.full_options[option.strip()] = indicator.strip()
+
+    def process_tool_message(self, message: dict[str, Any]):
+        name = message.get("name")
+        args = message.get("args") or {}
+        body = "\n".join(f"{k}: {v}" for k, v in args.items())
+        self.process_answer_message(f"\n\n````\nUsing tool: {name}\n{body}\n````\n\n")
 
     def process_answer_message(self, message: str):
         """Collect streamed answer text, splitting off an inline reasoning trace.
-
-        The trace always comes first, so ``</think>`` is the single point at
-        which the stream switches from reasoning to answer. Text accumulates in
-        the answer buffer until then, which leaves a model that never reasons
-        inline with nothing to do. The tag is looked for in the accumulated
-        buffer rather than in the message, because a stream chunk can end in the
-        middle of it.
-
         Args:
             message: The next chunk of streamed answer text.
         """
-        self.full_answer += message
 
-        # if self._reasoning_split:
-        #     return
+        # The trace always comes first, so ``</think>`` is the single point at
+        # which the stream switches from reasoning to answer. Text accumulates in
+        # the answer buffer until then, which leaves a model that never reasons
+        # inline with nothing to do. The tag is looked for in the accumulated
+        # buffer rather than in the message, because a stream chunk can end in the
+        # middle of it.
+
+        self.full_answer += message
 
         close_tag = _THINK_CLOSE.search(self.full_answer)
         if close_tag is None:
@@ -121,6 +128,7 @@ class MessageProcessorFastAPI(MessageProcessorBase):
         self.full_answer = ""
         self.full_reasoning = ""
         self.full_error = ""
+        self.full_options = {}
         # self._reasoning_split = False
 
     def set_output_config(self):

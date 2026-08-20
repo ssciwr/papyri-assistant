@@ -29,6 +29,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     text: str
     reasoning: str = ""
+    options: dict[str, str] | None = None
 
 
 def _cors_origins() -> list[str]:

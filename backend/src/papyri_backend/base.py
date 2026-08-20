@@ -95,3 +95,6 @@ class MessageProcessorBase(ABC):
 
     @abstractmethod
     def reset_output_config(self): ...
+
+    @abstractmethod
+    def process_interrupt_message(self, option: str, indicator: str): ...

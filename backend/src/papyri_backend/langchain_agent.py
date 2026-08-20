@@ -246,41 +246,30 @@ class LangChainAgent(BaseAgent):
 
         yield from self._run.messages  # answer buffer
 
-    def _process_events_tool_call(self, tool_call):
-        """Print the name and arguments of a requested tool call.
-
-        Args:
-            tool_call: A finalized tool call emitted by the model.
-        """
-
-        self.message_processor.process_tool_message(
-            f"\n*Using tool: {tool_call.get('name')}"
-        )
-
-        # direct copy from PiConnector, check there.
-        for k, v in (tool_call.get("args") or {}).items():
-            fk = pformat(k, compact=True)
-            fv = pformat(v, compact=True)
-            self.message_processor.process_tool_message(f"  {fk}: {fv}* ")
-
-        print("reasoning part after tool call: ", self.message_processor.full_reasoning)
-
     def _process_interrupt(self):
         """Collect a decision for every action the run paused on.
 
         Decisions are staged as a resume payload for the next run, in the same
         order as the requested actions.
         """
-        print("process interrupt")
-        print("interrupts: ", self._run.interrupts)
+        print(" process interrupt")
         request = self._run.interrupts[0].value
         action_requests = request["action_requests"]
         review_configs = request["review_configs"]
 
+        print("action request: ")
+        pprint(action_requests)
+
+        print("config: ")
+        pprint(review_configs)
+
+        # this needs to become its own loop. The question is: how to trigger the decision?
         decisions = [
             self._process_action_request(action, config)
             for action, config in zip(action_requests, review_configs)
         ]
+
+        print("decisions taken: ", decisions)
 
         self._pending = Command(resume={"decisions": decisions})
 
@@ -295,69 +284,51 @@ class LangChainAgent(BaseAgent):
         Returns:
             A decision payload for the action.
         """
-        print("processing action request")
+
+        print("  processing action request")
         allowed = config["allowed_decisions"]
+        print("allowed : ", allowed)
 
         self.message_processor.process_system_message(
-            f"\nThe agent wants to run: {action['name']}"
+            "Please decide how you want to proceed:\n"
         )
-        if action.get("description"):
-            self.message_processor.process_system_message(f"  {action['description']}")
-        for k, v in (action.get("args") or {}).items():
-            self.message_processor.process_system_message(
-                f"  {pformat(k)}: {pformat(v)}"
+        for decision_type in allowed:
+            self.message_processor.process_interrupt_message(
+                f"\n\n**{decision_type[0].upper()}**{decision_type[1::]}"
             )
 
-        for index, decision_type in enumerate(allowed, start=1):
-            self.message_processor.process_system_message(f"  {index} {decision_type}")
+        print(" trying to ask decision: ")
+        # How do I get the answer back in here?
+        # decision_type = self._ask_decision_type(allowed)
 
-        decision_type = self._ask_decision_type(allowed)
+        # if decision_type == "approve":
+        #     return {"type": "approve"}
 
-        if decision_type == "approve":
-            return {"type": "approve"}
+        # if decision_type == "edit":
+        #     return {
+        #         "type": "edit",
+        #         "edited_action": {
+        #             "name": action["name"],
+        #             "args": self._ask_edited_args(action.get("args") or {}),
+        #         },
+        #     }
 
-        if decision_type == "edit":
-            return {
-                "type": "edit",
-                "edited_action": {
-                    "name": action["name"],
-                    "args": self._ask_edited_args(action.get("args") or {}),
-                },
-            }
+        # if decision_type == "reject":
+        #     message = self.message_processor.process_user_input(
+        #         "reason (optional) >> "
+        #     ).strip()
+        #     return (
+        #         {"type": "reject", "message": message}
+        #         if message
+        #         else {"type": "reject"}
+        #     )
 
-        if decision_type == "reject":
-            message = self.message_processor.process_user_input(
-                "reason (optional) >> "
-            ).strip()
-            return (
-                {"type": "reject", "message": message}
-                if message
-                else {"type": "reject"}
-            )
-
-        message = ""
-        while not message:
-            message = self.message_processor.process_user_input(
-                "response to the agent >> "
-            ).strip()
-        return {"type": "respond", "message": message}
-
-    def _ask_decision_type(self, allowed: list[str]) -> str:
-        """Read a decision from the numbered menu until the choice is valid.
-
-        Args:
-            allowed: The decision types the agent accepts for this action.
-
-        Returns:
-            The chosen decision type.
-        """
-        while True:
-            choice = self.message_processor.process_user_input("choice >> ").strip()
-            if choice.isdigit() and 1 <= int(choice) <= len(allowed):
-                return allowed[int(choice) - 1]
-            self.message_processor.process_error(
-                f"Pick a number between 1 and {len(allowed)}"
-            )
+        # message = ""
+        # while not message:
+        #     message = self.message_processor.process_user_input(
+        #         "response to the agent >> "
+        #     ).strip()
+        # return {"type": "respond", "message": "reject"}
 
     def _ask_edited_args(self, args: dict[str, Any]) -> dict[str, Any]:
         """Read replacement arguments as JSON until they parse.
@@ -374,6 +345,8 @@ class LangChainAgent(BaseAgent):
         )
 
         while True:
+            # TODO: this needs to work via the process_events machinery.
+            # this process_user_input blah here is not up for s
             raw = self.message_processor.process_user_input("edited args (JSON) >> ")
             try:
                 edited = json.loads(raw)
@@ -413,7 +386,7 @@ class LangChainAgent(BaseAgent):
 
         # TODO: what does this do? really?
         for tool_call in message.tool_calls.get() or []:
-            self._process_events_tool_call(tool_call)
+            self.message_processor.process_tool_message(tool_call)
 
     def process_events(self):
         """Drive the staged run to completion, pausing for interrupts."""
@@ -425,7 +398,29 @@ class LangChainAgent(BaseAgent):
 
             if self._run.interrupted:
                 print("interrupted")
-                self._process_interrupt()
+                request = self._run.interrupts[0].value
+                action_requests = request["action_requests"]
+                review_configs = request["review_configs"][0]
+                pprint(review_configs)
+                allowed = review_configs["allowed_decisions"]
+
+                print("action request: ")
+                pprint(action_requests)
+
+                print("config: ")
+                pprint(review_configs)
+
+                print("processing action request")
+                print("allowed : ", allowed)
+
+                self.message_processor.process_system_message(
+                    "Please decide how you want to proceed:\n"
+                )
+                for decision_type in allowed:
+                    self.message_processor.process_interrupt_message(
+                        f"{decision_type[0].upper()}**{decision_type[1::]}",
+                        f"{decision_type[0].upper()}",
+                    )
 
     def run_single_turn(self, message) -> dict[str, str]:
         """Run one turn for a single incoming message.
@@ -454,10 +449,14 @@ class LangChainAgent(BaseAgent):
         )
         reasoning_text = self.message_processor.full_reasoning.strip()
 
-        print("reasoning text: ", reasoning_text)
+        decision_options = None
+        if self.message_processor.full_options:
+            decision_options = self.message_processor.full_options
+
         answer = {
             "text": answer_text,
             "reasoning": reasoning_text,
+            "options": decision_options,
         }
         self.message_processor.reset_output_config()
         return answer
