@@ -24,7 +24,7 @@ async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
 
     # currently use a singleton agent b/c we only have a local usage
     global agent
-    if not agent:
+    if agent is None:
         try:
             agent = make_langchain_agent(
                 os.getenv(
@@ -36,92 +36,11 @@ async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
                 )
             )
         except Exception as e:
-            print("Exception happened in construction: ", e)
+            answer_text = f"Exception happened in agent construction: {e}"
 
-    answer = {"text": "dummy"}
     try:
-        answer = agent.answer_with_chat(raw_messages[-1])
-        print("agent answer: ", answer)
+        answer = agent.run_single_turn(raw_messages[-1])
     except Exception as e:
-        print("Exception happened in chat: ", e)
+        answer = {"text": f"Exception happened in chat: {e}", "reasoning": ""}
 
-    return {"text": _stringify_model_content(answer)}
-
-
-def _provider_kwargs() -> dict[str, str]:
-    api_key = _get_required_env(
-        "LLM_API_KEY", "Set LLM_API_KEY in backend/.env before using /chat."
-    )
-    kwargs = {"api_key": api_key}
-    api_url = _get_env("LLM_API_URL")
-
-    if api_url:
-        kwargs["base_url"] = api_url
-
-    return kwargs
-
-
-def _get_required_env(name: str, message: str) -> str:
-    value = _get_env(name)
-    if not value:
-        raise ValueError(message)
-
-    return value
-
-
-def _get_env(name: str) -> str | None:
-    value = os.getenv(name)
-    if value:
-        return value
-
-    return None
-
-
-def _to_langchain_message(message: NormalizedMessage) -> BaseMessage:
-    if message.role == "assistant":
-        return AIMessage(content=message.content)
-
-    if message.role == "system":
-        return SystemMessage(content=message.content)
-
-    return HumanMessage(content=message.content)
-
-
-def _find_last_user_message_index(messages: list[NormalizedMessage]) -> int:
-    for index in range(len(messages) - 1, -1, -1):
-        if messages[index].role == "user":
-            return index
-
-    return -1
-
-
-def _stringify_model_content(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-
-    if isinstance(content, list):
-        return "\n".join(
-            part_text
-            for part_text in (_stringify_content_part(part) for part in content)
-            if part_text
-        )
-
-    return str(content)
-
-
-def _stringify_content_part(part: Any) -> str:
-    if isinstance(part, str):
-        return part
-
-    if not isinstance(part, Mapping):
-        return ""
-
-    text = part.get("text")
-    if isinstance(text, str):
-        return text
-
-    content = part.get("content")
-    if isinstance(content, str):
-        return content
-
-    return ""
+    return {"text": answer["text"], "reasoning": answer["reasoning"]}
