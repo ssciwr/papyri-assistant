@@ -3,21 +3,21 @@
 import json
 import os
 import uuid
-from pprint import pformat
-from typing import Any
 from collections.abc import Mapping
 from pathlib import Path
+from pprint import pformat, pprint
+from typing import Any
+
+import yaml
 from deepagents import create_deep_agent
+from langchain.agents.middleware import (
+    LLMToolSelectorMiddleware,
+    SummarizationMiddleware,
+)
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
-from langchain.agents.middleware import (
-    SummarizationMiddleware,
-    LLMToolSelectorMiddleware,
-)
-import yaml
-from pprint import pprint
 
-from .base import BaseAgent
+from .base import BaseAgent, MessageProcessorBase
 from .message_processor import MessageProcessorTerminal
 from .utils import utils
 
@@ -61,7 +61,7 @@ def create_agent_from_config(path: str):
     for k, v in config.items():
         cfg[k] = _process_config(v)
 
-    return LangChainAgent([], kwargs=cfg)
+    return LangChainAgent([], **cfg)
 
 
 class LangChainAgent(BaseAgent):
@@ -71,7 +71,7 @@ class LangChainAgent(BaseAgent):
         self,
         options_to_pass: list[str],
         kwargs: dict[str, Any] | None = None,
-        message_processor_type: type | None = None,
+        message_processor_type: type[MessageProcessorBase] | None = None,
         message_processor_args: list[Any] | None = None,
         message_processor_kwargs: Mapping[str, Any] | None = None,
     ):
@@ -215,7 +215,7 @@ class LangChainAgent(BaseAgent):
         to_send = self._process_input_message(input)
 
         if to_send is None:
-            self.message_processor._process_input_failure(input)
+            self.message_processor.process_input_failure(input)
         else:
             self._pending = to_send
 
@@ -252,15 +252,18 @@ class LangChainAgent(BaseAgent):
         Args:
             tool_call: A finalized tool call emitted by the model.
         """
-        self.message_processor.process_thinking_message(
-            f"**Using tool: {tool_call.get('name')}"
+
+        self.message_processor.process_tool_message(
+            f"\n*Using tool: {tool_call.get('name')}"
         )
 
         # direct copy from PiConnector, check there.
         for k, v in (tool_call.get("args") or {}).items():
             fk = pformat(k, compact=True)
             fv = pformat(v, compact=True)
-            self.message_processor.process_thinking_message(f"  {fk}: {fv}**")
+            self.message_processor.process_tool_message(f"  {fk}: {fv}* ")
+
+        print("reasoning part after tool call: ", self.message_processor.full_reasoning)
 
     def _process_interrupt(self):
         """Collect a decision for every action the run paused on.
@@ -268,6 +271,8 @@ class LangChainAgent(BaseAgent):
         Decisions are staged as a resume payload for the next run, in the same
         order as the requested actions.
         """
+        print("process interrupt")
+        print("interrupts: ", self._run.interrupts)
         request = self._run.interrupts[0].value
         action_requests = request["action_requests"]
         review_configs = request["review_configs"]
@@ -277,9 +282,7 @@ class LangChainAgent(BaseAgent):
             for action, config in zip(action_requests, review_configs)
         ]
 
-        self._pending = Command(
-            resume={"decisions": decisions}
-        )  # should this be assignment or appending?
+        self._pending = Command(resume={"decisions": decisions})
 
     def _process_action_request(self, action, config):
         """Ask the user how to handle one requested action.
@@ -292,13 +295,14 @@ class LangChainAgent(BaseAgent):
         Returns:
             A decision payload for the action.
         """
+        print("processing action request")
         allowed = config["allowed_decisions"]
 
         self.message_processor.process_system_message(
             f"\nThe agent wants to run: {action['name']}"
         )
         if action.get("description"):
-            self.message_processor.process_system_message(f"{action['description']}")
+            self.message_processor.process_system_message(f"  {action['description']}")
         for k, v in (action.get("args") or {}).items():
             self.message_processor.process_system_message(
                 f"  {pformat(k)}: {pformat(v)}"
@@ -407,6 +411,7 @@ class LangChainAgent(BaseAgent):
                     delta.get("reasoning", "")
                 )
 
+        # TODO: what does this do? really?
         for tool_call in message.tool_calls.get() or []:
             self._process_events_tool_call(tool_call)
 
@@ -418,62 +423,44 @@ class LangChainAgent(BaseAgent):
             for message in self.get_answers():
                 self._process_events_message(message)
 
-            self.message_processor.reset_output_config()
-
             if self._run.interrupted:
+                print("interrupted")
                 self._process_interrupt()
 
-    def answer_with_chat(self, message) -> Any:
-        """_summary_
+    def run_single_turn(self, message) -> dict[str, str]:
+        """Run one turn for a single incoming message.
 
         Args:
-            message (_type_): _description_
+            message: An incoming chat message, whose first content part carries
+                the user's text.
 
         Returns:
-            Any: _description_
+            The agent's ``text`` answer and its ``reasoning`` trace, either of
+            which may be empty. A run that failed leaves no answer, so the
+            collected error takes its place.
         """
-        # TODO. This needs to become the thing fastAPI builds on
-        # - eats list of json or text through messageprocessor
-        # - makes it pending
-        # then let's get_answers do its thing
-        # then do all the other stuff
-
-        print("incoming messages")
-        pprint(message)
+        print("input message: ", message["content"][0]["text"])
         self.send_message(message["content"][0]["text"])
 
-        # compose message:
-        full_answer = []
-        full_reasoning = []
-        while self._pending is not None:
-            for answer in self.get_answers():
-                for event in answer:
-                    if event.get("event") != "content-block-delta":
-                        continue
-                    delta = event.get("delta") or {}
-                    print("type: ", delta.get("type"))
-                    if delta.get("type") == "text-delta":
-                        full_answer.append(delta.get("text", ""))
-                    elif delta.get("type") == "reasoning-delta":
-                        full_reasoning.append(delta.get("reasoning", ""))
+        try:
+            self.process_events()
+        except Exception as exc:
+            self._pending = None
+            self.message_processor.process_error(f"The agent run failed: {exc}")
 
-        # TODO: understand the meaning of this
+        answer_text = (
+            self.message_processor.full_answer.strip()
+            or self.message_processor.full_error.strip()
+        )
+        reasoning_text = self.message_processor.full_reasoning.strip()
 
-        # for tool_call in message.tool_calls.get() or []:
-        #     self._process_events_tool_call(tool_call)
-        full_answer = "".join(full_answer)
-        print("answer: ")
-        pprint(full_answer)
-
-        full_reasoning = "".join(full_reasoning)
-        print("reasoning: ")
-        pprint(full_reasoning)
-
-        # TODO: understand the meaning of this and how it handles tools
-        if self._run.interrupted:
-            self._process_interrupt()
-
-        return {"text": full_answer}
+        print("reasoning text: ", reasoning_text)
+        answer = {
+            "text": answer_text,
+            "reasoning": reasoning_text,
+        }
+        self.message_processor.reset_output_config()
+        return answer
 
     def run(
         self,
