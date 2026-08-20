@@ -1,5 +1,13 @@
+import re
+
 from .base import MessageProcessorBase
 from collections.abc import Sequence
+
+# Models that reason inline mark the trace as ordinary answer text instead of
+# emitting reasoning events. The tags are matched leniently because whitespace
+# and casing vary between deployments.
+_THINK_OPEN = re.compile(r"<\s*think\s*>", re.IGNORECASE)
+_THINK_CLOSE = re.compile(r"</\s*think\s*>", re.IGNORECASE)
 
 
 class MessageProcessorTerminal(MessageProcessorBase):
@@ -54,16 +62,66 @@ class MessageProcessorTerminal(MessageProcessorBase):
 
 
 class MessageProcessorFastAPI(MessageProcessorBase):
-    def process_system_message(self, message): ...
+    """Collect agent output in buffers a request handler can hand back."""
 
-    def process_tool_message(self, message): ...
+    def __init__(self):
+        self.full_answer = ""
+        self.full_reasoning = ""
+        self.full_error = ""
+        # self._reasoning_split = False
 
-    def process_answer_message(self, message): ...
+    def process_system_message(self, message: str):
+        self.process_answer_message(message)
 
-    def process_user_input(self, message) -> str: ...
+    def process_tool_message(self, message: str):
+        self.process_answer_message(message)
 
-    def process_input_failure(self, input): ...
+    def process_answer_message(self, message: str):
+        """Collect streamed answer text, splitting off an inline reasoning trace.
 
-    def process_thinking_message(self, message): ...
+        The trace always comes first, so ``</think>`` is the single point at
+        which the stream switches from reasoning to answer. Text accumulates in
+        the answer buffer until then, which leaves a model that never reasons
+        inline with nothing to do. The tag is looked for in the accumulated
+        buffer rather than in the message, because a stream chunk can end in the
+        middle of it.
 
-    def process_error(self, message): ...
+        Args:
+            message: The next chunk of streamed answer text.
+        """
+        self.full_answer += message
+
+        # if self._reasoning_split:
+        #     return
+
+        close_tag = _THINK_CLOSE.search(self.full_answer)
+        if close_tag is None:
+            return
+
+        # The opening tag is dropped when the model sent one; deployments whose
+        # chat template pre-fills it start the trace without one.
+        reasoning_part = _THINK_OPEN.sub("", self.full_answer[: close_tag.start()], 1)
+        self.full_reasoning += reasoning_part
+        self.full_answer = self.full_answer[close_tag.end() :]
+        # self._reasoning_split = True
+
+    def process_user_input(self, message) -> str:
+        return message
+
+    def process_input_failure(self, input):
+        self.full_error = f"{input} is not a processable input"
+
+    def process_thinking_message(self, message: str):
+        self.full_reasoning += message
+
+    def process_error(self, message: str):
+        self.full_error += message
+
+    def reset_output_config(self):
+        self.full_answer = ""
+        self.full_reasoning = ""
+        self.full_error = ""
+        # self._reasoning_split = False
+
+    def set_output_config(self):
+        pass
