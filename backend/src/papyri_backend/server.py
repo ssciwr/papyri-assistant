@@ -28,6 +28,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     text: str
+    reasoning: str = ""
 
 
 def _cors_origins() -> list[str]:
@@ -67,7 +68,6 @@ async def health() -> dict[str, bool]:
 async def chat(request: ChatRequest) -> JSONResponse | dict[str, str]:
     try:
         answer = await answer_with_chat(request.messages)
-        print("answer: ", answer)
         return answer
     except Exception as exc:
         message = str(exc) or "Unexpected error"
