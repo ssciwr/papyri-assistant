@@ -53,12 +53,15 @@ class BaseAgent(ABC):
         ...
 
     @abstractmethod
-    def answer_with_chat(self, message) -> Any:
+    def run_single_turn(self, message) -> dict[str, str]:
         """Connection point to fastAPI
 
         Args:
-            messages (list[str]): incoming messages
+            message: A single incoming chat message.
 
+        Returns:
+            The agent's ``text`` answer and its ``reasoning`` trace, either of
+            which may be empty.
         """
         ...
 
