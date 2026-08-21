@@ -12,6 +12,7 @@ import {
   type ReasoningMessagePartComponent,
   type TextMessagePartComponent
 } from "@assistant-ui/react";
+import { readDecision, type DecisionReply } from "../decisionGate";
 
 type MarkdownContentProps = ComponentPropsWithoutRef<"div">;
 
@@ -38,12 +39,40 @@ function StreamingIndicator() {
   return <span className="message-streaming-indicator">●</span>;
 }
 
-const MarkdownText: TextMessagePartComponent = ({ text, status }) => (
-  <div className="message-part message-part-text">
-    <MarkdownContent>{text}</MarkdownContent>
-    {status.type === "running" && <StreamingIndicator />}
-  </div>
-);
+function DecisionSummary({ decisions }: { decisions: DecisionReply[] }) {
+  return (
+    <div className="decision-summary">
+      {decisions.map((decision, index) => (
+        <p className="decision-summary-item" key={index}>
+          <span className="decision-summary-type">{decision.type}</span>
+          {decision.message && (
+            <span className="decision-summary-message">
+              {" — "}
+              {decision.message}
+            </span>
+          )}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+const MarkdownText: TextMessagePartComponent = ({ text, status }) => {
+  // A decision travels as the JSON text of a user message, so it is summarised
+  // here rather than rendered as the payload it literally is.
+  const decisions = readDecision(text);
+
+  if (decisions) {
+    return <DecisionSummary decisions={decisions} />;
+  }
+
+  return (
+    <div className="message-part message-part-text">
+      <MarkdownContent>{text}</MarkdownContent>
+      {status.type === "running" && <StreamingIndicator />}
+    </div>
+  );
+};
 
 const ReasoningOutput: ReasoningMessagePartComponent = ({ text, status }) => (
   <details className="reasoning-output">
