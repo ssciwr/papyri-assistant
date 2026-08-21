@@ -1,66 +1,76 @@
-model:
-  type: langchain_openai.ChatOpenAI
-  kwargs:
-    temperature: 0.0
-  # model, api key and base_url are set via env vars
-
-# Caller-authored system instructions, placed before the deepagents base prompt.
-system_prompt: &sysprompt "You are a concise, helpful assistant" # TODO
-
-# tools:
-#   - ls
-#   - grep
-#   - find
-
-middleware:
-  - type: langchain.agents.middleware.SummarizationMiddleware
-    kwargs: {}
-  # - type: langchain.agents.middleware.HumanInTheLoopMiddleware
-  #   args: []
-  #   kwargs: {}
-  - type: langchain.agents.middleware.TodoListMiddleware
-    kwargs: {}
-
-interrupt_on:
-  write_file:
-    allowed_decisions: ["approve", "edit", "reject"]
-  edit_file:
-    allowed_decisions: ["approve", "edit", "reject"]
-  execute: # only ever fires with a sandbox backend; see "backend" below
-    allowed_decisions: ["approve", "reject"]
-
-permissions:
-  - type: deepagents.FilesystemPermission
+kwargs:
+  model:
+    type: langchain_openai.ChatOpenAI
     kwargs:
-      operations: ["write"]
-      paths: ["/etc/**", "~/.ssh/**"]
-      mode: "deny"
-  - type: deepagents.FilesystemPermission
-    kwargs:
-      operations: ["read", "write"]
-      paths: ["~/Development/**"]
-      mode: "allow"
+      temperature: 0.0
+    # model, api key and base_url are set via env vars
 
-# Named subagents the "task" tool can delegate to. Each entry needs name,
-# description and system_prompt, and may add tools/model/interrupt_on.
-# TODO: fill in once the papyrological subagents are defined.
-# subagents: []
+  # Caller-authored system instructions, placed before the deepagents base prompt.
+  system_prompt: &sysprompt "You are a concise, helpful assistant" # TODO
 
-# checkpointer: LangChainAgent already installs a
-#   langgraph.checkpoint.memory.InMemorySaver when none is given, because
-#   interrupts cannot be resumed without one. Set it here to persist threads,
-#   e.g. type: langgraph.checkpoint.sqlite.SqliteSaver
+  tools: []
+  #   - ls
+  #   - grep
+  #   - find
 
-# store: BaseStore for cross-thread state, required by the "memory" kwarg below
+  middleware:
+    - type: langchain.agents.middleware.SummarizationMiddleware
+      kwargs: {}
+    # - type: langchain.agents.middleware.HumanInTheLoopMiddleware
+    #   args: []
+    #   kwargs: {}
+    - type: langchain.agents.middleware.TodoListMiddleware
+      kwargs: {}
 
-# memory: list of AGENTS.md-style files loaded as persistent context
+  # "reject" carries an optional reason, which reaches the model as the refused
+  # tool call's result. Saying what to do instead belongs there rather than in a
+  # follow-up message, so the model knows which action was refused and why.
+  # "edit" is deliberately absent: rewriting tool arguments by hand is a worse
+  # way to redirect the agent than telling it what you actually want.
+  interrupt_on:
+    write_file:
+      allowed_decisions: ["approve", "reject"]
+    edit_file:
+      allowed_decisions: ["approve", "reject"]
+    execute: # only ever fires with a sandbox backend; see "backend" below
+      allowed_decisions: ["approve", "reject"]
 
-# skills: list of skill directories exposed to the agent
+  permissions:
+    - type: deepagents.FilesystemPermission
+      kwargs:
+        operations: ["write"]
+        paths: ["/etc/**", "~/.ssh/**"]
+        mode: "deny"
+    - type: deepagents.FilesystemPermission
+      kwargs:
+        operations: ["read", "write"]
+        paths: ["/app/**"]
+        mode: "allow"
 
-# backend: filesystem backend; defaults to an in-state one, so files live in
-#   graph state and "execute" returns an error until a sandbox backend is set
+  # Named subagents the "task" tool can delegate to. Each entry needs name,
+  # description and system_prompt, and may add tools/model/interrupt_on.
+  # TODO: fill in once the papyrological subagents are defined.
+  # subagents: []
 
-# response_format: structured-output strategy for the final answer
+  # checkpointer: LangChainAgent already installs a
+  #   langgraph.checkpoint.memory.InMemorySaver when none is given, because
+  #   interrupts cannot be resumed without one. Set it here to persist threads,
+  #   e.g. type: langgraph.checkpoint.sqlite.SqliteSaver
 
-# state_schema / context_schema: custom DeepAgentState / runtime context types
-# name, debug, cache: graph name, verbose tracing, and a langgraph cache
+  # store: BaseStore for cross-thread state, required by the "memory" kwarg below
+
+  # memory: list of AGENTS.md-style files loaded as persistent context
+
+  # skills: list of skill directories exposed to the agent
+
+  # backend: filesystem backend; defaults to an in-state one, so files live in
+  #   graph state and "execute" returns an error until a sandbox backend is set
+
+  # response_format: structured-output strategy for the final answer
+
+  # state_schema / context_schema: custom DeepAgentState / runtime context types
+  # name, debug, cache: graph name, verbose tracing, and a langgraph cache
+
+message_processor_type: papyri_backend.message_processor.MessageProcessorFastAPI
+message_processor_args: []
+message_processor_kwargs: {}

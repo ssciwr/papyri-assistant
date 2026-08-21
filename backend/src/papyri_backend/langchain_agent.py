@@ -5,7 +5,6 @@ import os
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
-from pprint import pformat, pprint
 from typing import Any
 
 import yaml
@@ -18,6 +17,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from .base import BaseAgent, MessageProcessorBase
+from .exceptions import InvalidDecision, StaleDecision
 from .message_processor import MessageProcessorTerminal
 from .utils import utils
 
@@ -246,119 +246,146 @@ class LangChainAgent(BaseAgent):
 
         yield from self._run.messages  # answer buffer
 
-    def _process_interrupt(self):
-        """Collect a decision for every action the run paused on.
+    def _pending_interrupt(self):
+        """Return the interrupt the run is paused on, if any.
 
-        Decisions are staged as a resume payload for the next run, in the same
-        order as the requested actions.
+        The checkpointer is the single source of truth here rather than the
+        retained run, because a pause outlives the request that produced it.
+
+        Returns:
+            The pending ``Interrupt``, or ``None`` when nothing is paused.
         """
-        print(" process interrupt")
-        request = self._run.interrupts[0].value
+        interrupts = self.agent.get_state(self._config).interrupts
+        return interrupts[0] if interrupts else None
+
+    @staticmethod
+    def _interrupt_view(interrupt) -> dict[str, Any]:
+        """Describe a pending interrupt for a client that has to answer it.
+
+        Args:
+            interrupt: The ``Interrupt`` the run is paused on.
+
+        Returns:
+            The interrupt's id and one entry per paused action, carrying the
+            action's name, the arguments the model asked for, and the decisions
+            allowed for that action specifically.
+        """
+        request = interrupt.value
+        return {
+            "id": interrupt.id,
+            "actions": [
+                {
+                    "name": action["name"],
+                    "args": action.get("args") or {},
+                    "allowed_decisions": list(config["allowed_decisions"]),
+                }
+                for action, config in zip(
+                    request["action_requests"], request["review_configs"]
+                )
+            ],
+        }
+
+    def _process_interrupt(self, payload: Mapping[str, Any]):
+        """Answer the pending interrupt and stage the resume for the next run.
+
+        The graph raises ``ValueError`` for a decision count that does not match
+        the paused actions, or for a type the action does not allow. Both are
+        checked here instead, so a bad reply is a rejected request rather than a
+        failed run.
+
+        Args:
+            payload: A decision reply, carrying ``interrupt_id`` and one entry in
+                ``decisions`` per paused action, in the same order.
+
+        Raises:
+            StaleDecision: Nothing is paused, or the reply names another interrupt.
+            InvalidDecision: The reply has the wrong number of decisions, or one
+                the action does not allow.
+        """
+        interrupt = self._pending_interrupt()
+        if interrupt is None:
+            raise StaleDecision("No decision is pending.")
+
+        if payload.get("interrupt_id") != interrupt.id:
+            raise StaleDecision(
+                "This decision answers an interrupt that is no longer pending."
+            )
+
+        request = interrupt.value
         action_requests = request["action_requests"]
         review_configs = request["review_configs"]
+        replies = payload.get("decisions") or []
 
-        print("action request: ")
-        pprint(action_requests)
+        if len(replies) != len(action_requests):
+            raise InvalidDecision(
+                f"Expected {len(action_requests)} decisions, got {len(replies)}."
+            )
 
-        print("config: ")
-        pprint(review_configs)
-
-        # this needs to become its own loop. The question is: how to trigger the decision?
         decisions = [
-            self._process_action_request(action, config)
-            for action, config in zip(action_requests, review_configs)
+            self._build_decision(reply, action, config)
+            for reply, action, config in zip(replies, action_requests, review_configs)
         ]
-
-        print("decisions taken: ", decisions)
 
         self._pending = Command(resume={"decisions": decisions})
 
-    def _process_action_request(self, action, config):
-        """Ask the user how to handle one requested action.
+    @staticmethod
+    def _build_decision(
+        reply: Mapping[str, Any],
+        action: Mapping[str, Any],
+        config: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Translate one client reply into the decision the middleware expects.
+
+        The edited action's name is taken from the paused action rather than from
+        the reply, so a client cannot redirect a decision at a different tool.
 
         Args:
-            action: The action awaiting review, with its name and arguments.
-            config: The review policy for the action, listing which decisions
-                the agent will accept for it.
+            reply: One entry of the client's ``decisions`` list.
+            action: The paused action the reply answers.
+            config: That action's review policy.
 
         Returns:
-            A decision payload for the action.
+            A decision payload for ``HumanInTheLoopMiddleware``.
+
+        Raises:
+            InvalidDecision: The type is missing, not allowed for this action, or
+                carries the wrong body for its kind.
         """
-
-        print("  processing action request")
+        decision_type = reply.get("type")
         allowed = config["allowed_decisions"]
-        print("allowed : ", allowed)
 
-        self.message_processor.process_system_message(
-            "Please decide how you want to proceed:\n"
-        )
-        for decision_type in allowed:
-            self.message_processor.process_interrupt_message(
-                f"\n\n**{decision_type[0].upper()}**{decision_type[1::]}"
+        if decision_type not in allowed:
+            raise InvalidDecision(
+                f"Decision '{decision_type}' is not allowed for "
+                f"'{action['name']}'. Expected one of {list(allowed)}."
             )
 
-        print(" trying to ask decision: ")
-        # How do I get the answer back in here?
-        # decision_type = self._ask_decision_type(allowed)
+        # TODO: this hardcodes possible decisions, which are not necessarily always the same.
 
-        # if decision_type == "approve":
-        #     return {"type": "approve"}
+        if decision_type == "approve":
+            return {"type": "approve"}
 
-        # if decision_type == "edit":
-        #     return {
-        #         "type": "edit",
-        #         "edited_action": {
-        #             "name": action["name"],
-        #             "args": self._ask_edited_args(action.get("args") or {}),
-        #         },
-        #     }
+        if decision_type == "edit":
+            args = reply.get("args")
+            if not isinstance(args, dict):
+                raise InvalidDecision("An edited action needs its args as an object.")
+            return {
+                "type": "edit",
+                "edited_action": {"name": action["name"], "args": args},
+            }
 
-        # if decision_type == "reject":
-        #     message = self.message_processor.process_user_input(
-        #         "reason (optional) >> "
-        #     ).strip()
-        #     return (
-        #         {"type": "reject", "message": message}
-        #         if message
-        #         else {"type": "reject"}
-        #     )
+        if decision_type == "reject":
+            message = (reply.get("message") or "").strip()
+            return (
+                {"type": "reject", "message": message}
+                if message
+                else {"type": "reject"}
+            )
 
-        # message = ""
-        # while not message:
-        #     message = self.message_processor.process_user_input(
-        #         "response to the agent >> "
-        #     ).strip()
-        # return {"type": "respond", "message": "reject"}
-
-    def _ask_edited_args(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Read replacement arguments as JSON until they parse.
-
-        Args:
-            args: The arguments the model requested, shown as a starting point.
-
-        Returns:
-            The replacement arguments.
-        """
-        # what is this about? check docs
-        self.message_processor.process_system_message(
-            f"current args: {json.dumps(args)}"
-        )
-
-        while True:
-            # TODO: this needs to work via the process_events machinery.
-            # this process_user_input blah here is not up for s
-            raw = self.message_processor.process_user_input("edited args (JSON) >> ")
-            try:
-                edited = json.loads(raw)
-            except json.JSONDecodeError as exc:
-                self.message_processor.process_error(f"Not valid JSON: {exc}")
-                continue
-
-            if not isinstance(edited, dict):
-                self.message_processor.process_error("Args must be a JSON object.")
-                continue
-
-            return edited
+        message = (reply.get("message") or "").strip()
+        if not message:
+            raise InvalidDecision("Responding on behalf of a tool needs a message.")
+        return {"type": "respond", "message": message}
 
     def _process_events_message(self, message):
         """Print one model message as it streams in.
@@ -389,7 +416,13 @@ class LangChainAgent(BaseAgent):
             self.message_processor.process_tool_message(tool_call)
 
     def process_events(self):
-        """Drive the staged run to completion, pausing for interrupts."""
+        """Drive the staged run until it finishes or pauses for a decision.
+
+        A paused run is left paused: the checkpointer holds it until a decision
+        arrives on a later turn. The choices are announced here for clients that
+        render agent output as it arrives; clients that answer the interrupt read
+        it from ``_interrupt_view`` instead.
+        """
         # implements the control flow for event processing.
         # delegates implement treatment of events
         while self._pending is not None:
@@ -397,30 +430,46 @@ class LangChainAgent(BaseAgent):
                 self._process_events_message(message)
 
             if self._run.interrupted:
-                print("interrupted")
                 request = self._run.interrupts[0].value
-                action_requests = request["action_requests"]
-                review_configs = request["review_configs"][0]
-                pprint(review_configs)
-                allowed = review_configs["allowed_decisions"]
-
-                print("action request: ")
-                pprint(action_requests)
-
-                print("config: ")
-                pprint(review_configs)
-
-                print("processing action request")
-                print("allowed : ", allowed)
-
                 self.message_processor.process_system_message(
                     "Please decide how you want to proceed:\n"
                 )
-                for decision_type in allowed:
-                    self.message_processor.process_interrupt_message(decision_type)
+                for config in request["review_configs"]:
+                    for decision_type in config["allowed_decisions"]:
+                        self.message_processor.process_interrupt_message(decision_type)
 
-    def run_single_turn(self, message) -> dict[str, str]:
+    @staticmethod
+    def _as_decision(text: str) -> dict[str, Any] | None:
+        """Read a message as a decision reply, if that is what it is.
+
+        Decisions travel as the JSON text of an ordinary user message, so every
+        message is examined. ``interrupt_id`` is what marks one, because it is
+        specific enough that ordinary prose cannot produce it by accident.
+
+        Args:
+            text: The incoming message's text.
+
+        Returns:
+            The decision payload, or ``None`` for an ordinary message.
+        """
+        stripped = text.strip()
+        if not stripped.startswith("{"):
+            return None
+
+        try:
+            payload = json.loads(stripped)
+        except json.JSONDecodeError:
+            return None
+
+        if isinstance(payload, dict) and "interrupt_id" in payload:
+            return payload
+        return None
+
+    def run_single_turn(self, message) -> dict[str, Any]:
         """Run one turn for a single incoming message.
+
+        A message that carries a decision answers the paused run instead of
+        starting a new one.
 
         Args:
             message: An incoming chat message, whose first content part carries
@@ -428,11 +477,23 @@ class LangChainAgent(BaseAgent):
 
         Returns:
             The agent's ``text`` answer and its ``reasoning`` trace, either of
-            which may be empty. A run that failed leaves no answer, so the
-            collected error takes its place.
+            which may be empty, plus the ``interrupt`` the run is now paused on,
+            if any. A run that failed leaves no answer, so the collected error
+            takes its place.
+
+        Raises:
+            StaleDecision: The message answered an interrupt that is not pending.
+            InvalidDecision: The decision was malformed or is not allowed.
         """
-        print("input message: ", message["content"][0]["text"])
-        self.send_message(message["content"][0]["text"])
+        text = message["content"][0]["text"]
+        decision = self._as_decision(text)
+
+        # Raised before the run is touched, so a refused decision leaves the
+        # graph paused exactly as it was.
+        if decision is not None:
+            self._process_interrupt(decision)
+        else:
+            self.send_message(text)
 
         try:
             self.process_events()
@@ -446,14 +507,12 @@ class LangChainAgent(BaseAgent):
         )
         reasoning_text = self.message_processor.full_reasoning.strip()
 
-        decision_options = None
-        if self.message_processor.full_options:
-            decision_options = self.message_processor.full_options
+        interrupt = self._pending_interrupt()
 
         answer = {
             "text": answer_text,
             "reasoning": reasoning_text,
-            "options": decision_options,
+            "interrupt": self._interrupt_view(interrupt) if interrupt else None,
         }
         self.message_processor.reset_output_config()
         return answer

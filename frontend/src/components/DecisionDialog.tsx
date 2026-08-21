@@ -1,40 +1,80 @@
 import { useEffect, useState } from "react";
 import { useAui } from "@assistant-ui/react";
-import { onDecision, type DecisionOptions } from "../decisionGate";
+import { onDecision, type PendingInterrupt } from "../decisionGate";
 
-const EDIT = "edit";
+type Reply = { type: string; message?: string };
+
+/** Per-action dialog state: the chosen decision and any message going with it. */
+type Draft = { decision: string; message: string };
+
+/**
+ * Decisions that carry a message back to the model.
+ *
+ * A rejection's reason arrives as the refused tool call's result, so this is
+ * where "do it this way instead" belongs — the model sees which action was
+ * refused alongside why, rather than having to tie a later message to it.
+ * `respond` answers on the tool's behalf and needs one; `reject` does not.
+ */
+const MESSAGE_REQUIRED = "respond";
+const carriesMessage = (decision: string) =>
+  decision === "reject" || decision === MESSAGE_REQUIRED;
+
+const placeholderFor = (decision: string) =>
+  decision === MESSAGE_REQUIRED
+    ? "Your answer for the agent..."
+    : "Optional: what to do instead...";
 
 export function DecisionDialog() {
   const aui = useAui();
-  const [options, setOptions] = useState<DecisionOptions | null>(null);
-  const [selected, setSelected] = useState<string>("");
-  const [args, setArgs] = useState("");
+  const [interrupt, setInterrupt] = useState<PendingInterrupt | null>(null);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
 
   useEffect(
     () =>
       onDecision((incoming) => {
-        setOptions(incoming);
-        setSelected(incoming[0] ?? "");
-        setArgs("");
+        setInterrupt(incoming);
+        setDrafts(
+          incoming.actions.map((action) => ({
+            decision: action.allowed_decisions[0] ?? "",
+            message: ""
+          }))
+        );
       }),
     []
   );
 
-  if (!options) {
+  if (!interrupt) {
     return null;
   }
 
-  const editSelected = selected === EDIT;
+  const update = (index: number, patch: Partial<Draft>) =>
+    setDrafts((current) =>
+      current.map((draft, i) => (i === index ? { ...draft, ...patch } : draft))
+    );
+
+  const incomplete = drafts.some(
+    (draft) =>
+      !draft.decision ||
+      (draft.decision === MESSAGE_REQUIRED && !draft.message.trim())
+  );
 
   const handleSubmit = () => {
-    const payload = editSelected
-      ? { option: selected, args }
-      : { option: selected };
+    const decisions: Reply[] = drafts.map((draft) => {
+      const message = draft.message.trim();
+      return carriesMessage(draft.decision) && message
+        ? { type: draft.decision, message }
+        : { type: draft.decision };
+    });
 
-    setOptions(null);
+    setInterrupt(null);
     aui.thread().append({
       role: "user",
-      content: [{ type: "text", text: JSON.stringify(payload) }]
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ interrupt_id: interrupt.id, decisions })
+        }
+      ]
     });
   };
 
@@ -42,33 +82,39 @@ export function DecisionDialog() {
     <div className="decision-overlay" role="dialog" aria-modal="true">
       <div className="decision-dialog">
         <h2 className="decision-title">How do you want to proceed?</h2>
-        <div className="decision-options">
-          {options.map((option) => (
-            <label className="decision-option" key={option}>
-              <input
-                checked={selected === option}
-                name="decision-option"
-                onChange={() => setSelected(option)}
-                type="radio"
-                value={option}
+        {interrupt.actions.map((action, index) => (
+          <section className="decision-action" key={`${action.name}-${index}`}>
+            <h3 className="decision-action-name">{action.name}</h3>
+            <div className="decision-options">
+              {action.allowed_decisions.map((option) => (
+                <label className="decision-option" key={option}>
+                  <input
+                    checked={drafts[index]?.decision === option}
+                    name={`decision-${index}`}
+                    onChange={() => update(index, { decision: option })}
+                    type="radio"
+                    value={option}
+                  />
+                  <span>{option}</span>
+                </label>
+              ))}
+            </div>
+            {carriesMessage(drafts[index]?.decision ?? "") && (
+              <textarea
+                className="decision-message"
+                onChange={(event) =>
+                  update(index, { message: event.target.value })
+                }
+                placeholder={placeholderFor(drafts[index].decision)}
+                rows={3}
+                value={drafts[index]?.message ?? ""}
               />
-              <span>{option}</span>
-            </label>
-          ))}
-        </div>
-        {options.includes(EDIT) && (
-          <textarea
-            className="decision-args"
-            disabled={!editSelected}
-            onChange={(event) => setArgs(event.target.value)}
-            placeholder="Your edit..."
-            rows={3}
-            value={args}
-          />
-        )}
+            )}
+          </section>
+        ))}
         <button
           className="decision-submit"
-          disabled={!selected}
+          disabled={incomplete}
           onClick={handleSubmit}
           type="button"
         >
