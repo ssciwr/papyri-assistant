@@ -1,4 +1,5 @@
 kwargs:
+  name: defaultAgent
   model:
     type: langchain_openai.ChatOpenAI
     kwargs:
@@ -13,12 +14,10 @@ kwargs:
   #   - grep
   #   - find
 
+  # carefull here: deep_agents adds default middleware indentified by class name!
   middleware:
     - type: langchain.agents.middleware.SummarizationMiddleware
       kwargs: {}
-    # - type: langchain.agents.middleware.HumanInTheLoopMiddleware
-    #   args: []
-    #   kwargs: {}
     - type: langchain.agents.middleware.TodoListMiddleware
       kwargs: {}
 
@@ -32,20 +31,54 @@ kwargs:
       allowed_decisions: ["approve", "reject"]
     edit_file:
       allowed_decisions: ["approve", "reject"]
+    read_file:
+      allowed_decisions: ["approve", "reject"]
     execute: # only ever fires with a sandbox backend; see "backend" below
       allowed_decisions: ["approve", "reject"]
 
   permissions:
     - type: deepagents.FilesystemPermission
       kwargs:
-        operations: ["write"]
-        paths: ["/etc/**", "~/.ssh/**"]
+        operations: ["read", "write"]
+        paths: ["/app/secrets"]
         mode: "deny"
     - type: deepagents.FilesystemPermission
       kwargs:
         operations: ["read", "write"]
-        paths: ["/app/**"]
+        paths: ["/app/workspace"]
         mode: "allow"
+    - type: deepagents.FilesystemPermission
+      kwargs:
+        operations: ["read", "write"]
+        paths: ["/app/memory"]
+        mode: "allow"
+    - type: deepagents.FilesystemPermission
+      kwargs:
+        operations: ["read"]
+        paths: ["/app/skills"]
+        mode: "allow"
+    - type: deepagents.FilesystemPermission
+      kwargs:
+        operations: ["write"]
+        paths: ["/app/skills"]
+        mode: "deny"
+    # backend: Always uses a composite Backend that routes backends by directory.
+    # defaults to an in-state one, so files live in
+    #   graph state and "execute" returns an error until a sandbox backend is set
+  backend:
+    default_typename: deepagents.backends.StateBackend
+    default_kwargs: {}
+    routes:
+      "/workspace/":
+        typename: deepagents.backends.FilesystemBackend
+        kwargs:
+          virtual_mode: True
+          root_dir: /app/workspace
+      "/memory/":
+        typename: deepagents.backends.FilesystemBackend
+        kwargs:
+          virtual_mode: True
+          root_dir: /app/memory
 
   # Named subagents the "task" tool can delegate to. Each entry needs name,
   # description and system_prompt, and may add tools/model/interrupt_on.
@@ -63,14 +96,7 @@ kwargs:
 
   # skills: list of skill directories exposed to the agent
 
-  # backend: filesystem backend; defaults to an in-state one, so files live in
-  #   graph state and "execute" returns an error until a sandbox backend is set
-
   # response_format: structured-output strategy for the final answer
 
   # state_schema / context_schema: custom DeepAgentState / runtime context types
   # name, debug, cache: graph name, verbose tracing, and a langgraph cache
-
-message_processor_type: papyri_backend.message_processor.MessageProcessorFastAPI
-message_processor_args: []
-message_processor_kwargs: {}

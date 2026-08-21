@@ -37,13 +37,6 @@ class BaseAgent(ABC):
         ...
 
     @abstractmethod
-    def run(
-        self,
-    ):
-        """Run the interactive prompt-and-response loop."""
-        ...
-
-    @abstractmethod
     def teardown(self) -> int:
         """Stop the underlying agent process.
 
@@ -62,47 +55,5 @@ class BaseAgent(ABC):
         Returns:
             The agent's ``text`` answer and its ``reasoning`` trace, either of
             which may be empty.
-        """
-        ...
-
-
-class MessageProcessorBase(ABC):
-    """Define how processed Pi events are presented to a client."""
-
-    @abstractmethod
-    def process_system_message(self, message): ...
-
-    @abstractmethod
-    def process_tool_message(self, message): ...
-
-    @abstractmethod
-    def process_answer_message(self, message): ...
-
-    @abstractmethod
-    def process_user_input(self, message) -> str: ...
-
-    @abstractmethod
-    def process_input_failure(self, input): ...
-
-    @abstractmethod
-    def process_thinking_message(self, message): ...
-
-    @abstractmethod
-    def process_error(self, message): ...
-
-    @abstractmethod
-    def set_output_config(self): ...
-
-    @abstractmethod
-    def reset_output_config(self): ...
-
-    @abstractmethod
-    def process_interrupt_message(self, decision: str):
-        """Present one decision the agent will accept for a paused action.
-
-        Args:
-            decision: A verbatim element of the action's ``allowed_decisions``,
-                such as ``"approve"``. Clients format it for display themselves,
-                because the token is what has to travel back to the agent.
         """
         ...
