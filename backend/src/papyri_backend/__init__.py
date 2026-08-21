@@ -1,11 +1,9 @@
 """Papyri backend package."""
 
 from .langchain_agent import LangChainAgent
-from .pi_agent import PiConnector
 
 __all__ = [
     "LangChainAgent",
-    "PiConnector",
     "__version__",
 ]
 
