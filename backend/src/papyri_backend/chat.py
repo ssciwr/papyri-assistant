@@ -8,6 +8,7 @@ from pathlib import Path
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
+from .exceptions import DecisionError
 from .utils.messages import NormalizedMessage, normalize_messages
 from .langchain_agent import LangChainAgent
 from .langchain_agent import create_agent_from_config as make_langchain_agent
@@ -43,6 +44,10 @@ async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
 
     try:
         answer = agent.run_single_turn(raw_messages[-1])
+    except DecisionError:
+        # A refused decision is a protocol error, not agent output: it carries a
+        # status code the transport turns into a failed request.
+        raise
     except Exception as e:
         answer = {"text": f"Exception happened in chat: {e}", "reasoning": ""}
 
