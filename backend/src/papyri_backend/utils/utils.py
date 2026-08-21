@@ -38,3 +38,29 @@ def load_type(path: Any) -> Any:
         return path
     else:
         return path
+
+
+def _process_config(value: Any):
+    """_summary_
+
+    Args:
+        value (Any): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    if isinstance(value, list):
+        result = []
+        for element in value:
+            result.append(_process_config(element))
+        return result
+
+    elif isinstance(value, dict):
+        result = {}
+        for i in value:
+            result[i] = _process_config(
+                value[i],
+            )
+        return result
+    else:
+        return load_type(value)

@@ -9,6 +9,8 @@ from typing import Any
 
 import yaml
 from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend
+
 from langchain.agents.middleware import (
     LLMToolSelectorMiddleware,
     SummarizationMiddleware,
@@ -40,26 +42,10 @@ def create_agent_from_config(path: str):
         config = yaml.safe_load(f)
 
     # recurse
-    def _process_config(value: Any):
-        if isinstance(value, list):
-            result = []
-            for element in value:
-                result.append(_process_config(element))
-            return result
-
-        elif isinstance(value, dict):
-            result = {}
-            for i in value:
-                result[i] = _process_config(
-                    value[i],
-                )  # TODO: recursion is wrong, need one in list as well
-            return result
-        else:
-            return utils.load_type(value)
 
     cfg = {}
     for k, v in config.items():
-        cfg[k] = _process_config(v)
+        cfg[k] = utils._process_config(v)
 
     return LangChainAgent([], **cfg)
 
@@ -70,7 +56,7 @@ class LangChainAgent(BaseAgent):
     def __init__(
         self,
         options_to_pass: list[str],
-        kwargs: dict[str, Any] | None = None,
+        kwargs: Mapping[str, Any] | None = None,
         message_processor_type: type[MessageProcessorBase] | None = None,
         message_processor_args: list[Any] | None = None,
         message_processor_kwargs: Mapping[str, Any] | None = None,
@@ -114,9 +100,17 @@ class LangChainAgent(BaseAgent):
                 for permission_def in agent_kwargs["permissions"] or []
             ]
 
+        if "backend" in agent_kwargs:
+            backend = self._build_backend(agent_kwargs["backend"])
+            agent_kwargs["backend"] = backend
+
+        if "store" in agent_kwargs:
+            store = self._build_store(agent_kwargs["store"])
+            agent_kwargs["store"] = store
+
         self.agent = create_deep_agent(**agent_kwargs)
         self.thread_id = str(uuid.uuid4())
-        self._pending: dict[str, Any] | Command | None = None
+        self._pending: Mapping[str, Any] | Command | None = None
         self._run: Any | None = None
 
         processor_type = (
@@ -173,6 +167,27 @@ class LangChainAgent(BaseAgent):
             ]
 
         return permission_type(**permission_kwargs)
+
+    @staticmethod
+    def _build_backend(backend_specs: Mapping[str, Mapping[str, Any]]) -> Any:
+
+        processed_backend_specs = {}
+        for k, v in backend_specs.items():
+            processed_backend_specs[k] = utils._process_config(v)
+
+        default = processed_backend_specs["default_typename"](
+            **processed_backend_specs.get("default_kwargs", {})
+        )
+
+        routes = {}
+        for route, backend_def in processed_backend_specs["routes"].items():
+            routes[route] = backend_def["typename"](**backend_def.get("kwargs", {}))
+
+        return CompositeBackend(default=default, routes=routes)
+
+    @staticmethod
+    def _build_store(store_specs: Mapping[str, Any]) -> Any:
+        return None
 
     @property
     def _config(
