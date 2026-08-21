@@ -6,13 +6,13 @@ import {
   type ThreadAssistantMessagePart
 } from "@assistant-ui/react";
 
-import { requestDecision, type DecisionOptions } from "./decisionGate";
+import { requestDecision, type PendingInterrupt } from "./decisionGate";
 
 const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 type ChatResponse = {
   text: string;
   reasoning?: string;
-  options?: DecisionOptions | null;
+  interrupt?: PendingInterrupt | null;
 };
 
 const modelAdapter: ChatModelAdapter = {
@@ -46,8 +46,8 @@ const modelAdapter: ChatModelAdapter = {
       text: data.text
     });
 
-    if (data.options?.length) {
-      requestDecision(data.options);
+    if (data.interrupt?.actions.length) {
+      requestDecision(data.interrupt);
     }
 
     return {

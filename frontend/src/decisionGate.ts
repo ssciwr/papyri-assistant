@@ -1,12 +1,23 @@
-// Verbatim decision tokens from the paused action's `allowed_decisions`,
-// e.g. ["approve", "edit", "reject"]. Sent back to the agent as-is.
-export type DecisionOptions = string[];
+/** One tool call the agent is waiting for a decision on. */
+export type PausedAction = {
+  name: string;
+  args: Record<string, unknown>;
+  /** Verbatim decision tokens allowed for this action specifically. */
+  allowed_decisions: string[];
+};
 
-type DecisionListener = (options: DecisionOptions) => void;
+/** The decision a paused run needs before it can continue. */
+export type PendingInterrupt = {
+  /** Sent back with the reply so the backend can reject a stale decision. */
+  id: string;
+  actions: PausedAction[];
+};
 
-let listener: DecisionListener | null = null;
+type InterruptListener = (interrupt: PendingInterrupt) => void;
 
-export function onDecision(fn: DecisionListener) {
+let listener: InterruptListener | null = null;
+
+export function onDecision(fn: InterruptListener) {
   listener = fn;
 
   return () => {
@@ -16,6 +27,6 @@ export function onDecision(fn: DecisionListener) {
   };
 }
 
-export function requestDecision(options: DecisionOptions) {
-  listener?.(options);
+export function requestDecision(interrupt: PendingInterrupt) {
+  listener?.(interrupt);
 }
