@@ -566,7 +566,10 @@ class LangChainAgent(BaseAgent):
             self._pending = None
             self._collect_error(f"The agent run failed: {exc}")
 
-        answer_text = self.full_answer.strip() or self.full_error.strip()
+        # Run failures deliberately travel as chat output during local
+        # development. Prefer them over incomplete text emitted before the
+        # failure (for example, a tool-call announcement).
+        answer_text = self.full_error.strip() or self.full_answer.strip()
         reasoning_text = self.full_reasoning.strip()
 
         interrupt = self._pending_interrupt()
