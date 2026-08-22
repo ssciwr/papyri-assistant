@@ -17,10 +17,16 @@ def list_sql_tables():
     with psycopg.connect(POSTGRES_URL) as conn:
         try:
             rows = conn.execute(
-                "SELECT name FROM information_schema.columns WHERE table_schema = 'public'"
-            )
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_type = 'BASE TABLE'
+                ORDER BY table_name
+                """
+            ).fetchall()
 
-            schema_text = "\n".join(f"{table}" for table in rows)
+            schema_text = "\n".join(table_name for (table_name,) in rows)
 
             return schema_text
         except Exception as e:
