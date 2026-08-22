@@ -43,6 +43,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_API_URL: ${LLM_API_URL:-}
       LLM_MODEL: ${LLM_MODEL:-}
+      POSTGRES_URL: ${POSTGRES_DOCKER_URL}
       PYTHONPATH: /app/backend/src
     volumes:
       - ./backend/src:/app/backend/src
