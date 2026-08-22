@@ -7,12 +7,12 @@ kwargs:
     # model, api key and base_url are set via env vars
 
   # Caller-authored system instructions, placed before the deepagents base prompt.
-  system_prompt: &sysprompt "You are a concise, helpful assistant" # TODO
+  system_prompt: &sysprompt "You are a concise, helpful assistant, expert in papyrology and expert in Postgres sql and postgres-vector" # TODO
 
-  tools: []
-  #   - ls
-  #   - grep
-  #   - find
+  tools:
+    - papyri_backend.tools.sql.list_sql_tables
+    - papyri_backend.tools.sql.inspect_sql
+    - papyri_backend.tools.sql.query_sql
 
   # carefull here: deep_agents adds default middleware indentified by class name!
   middleware:
@@ -29,39 +29,50 @@ kwargs:
   interrupt_on:
     write_file:
       allowed_decisions: ["approve", "reject"]
-    edit_file:
+    edit:
       allowed_decisions: ["approve", "reject"]
     read_file:
       allowed_decisions: ["approve", "reject"]
     execute: # only ever fires with a sandbox backend; see "backend" below
       allowed_decisions: ["approve", "reject"]
+    delete:
+      allowed_decisions: ["approve", "reject"]
 
+
+  # TODO: check that these are named right
   permissions:
     - type: deepagents.FilesystemPermission
       kwargs:
-        operations: ["read", "write"]
+        operations: ["read_file", "write_file", "delete", "edit"]
         paths: ["/app/secrets"]
         mode: "deny"
     - type: deepagents.FilesystemPermission
       kwargs:
-        operations: ["read", "write"]
+        operations: ["read_file", "write_file"]
         paths: ["/app/workspace"]
         mode: "allow"
     - type: deepagents.FilesystemPermission
       kwargs:
-        operations: ["read", "write"]
+        operations: ["read_file", "write_file", "edit"]
         paths: ["/app/memory"]
         mode: "allow"
     - type: deepagents.FilesystemPermission
       kwargs:
-        operations: ["read"]
+        operations: ["read_file"]
         paths: ["/app/skills"]
         mode: "allow"
     - type: deepagents.FilesystemPermission
       kwargs:
-        operations: ["write"]
+        operations: ["write_file", "delete", "edit"]
         paths: ["/app/skills"]
         mode: "deny"
+
+    - type: deepagents.FilesystemPermission
+      kwargs:
+        operations: ["write_file", "delete", "edit"]
+        paths: ["/app/logs"]
+        mode: "deny"
+
     # backend: Always uses a composite Backend that routes backends by directory.
     # defaults to an in-state one, so files live in
     #   graph state and "execute" returns an error until a sandbox backend is set

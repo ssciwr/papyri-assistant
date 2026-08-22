@@ -11,7 +11,7 @@ def list_sql_tables():
     """
     List all tables in a pre-connected postgres database.
     """
-    POSTGRES_URL = os.getenv("postgres_url")
+    POSTGRES_URL = os.getenv("POSTGRES_URL")
     if POSTGRES_URL is None:
         raise RuntimeError("Error, database url env variable not set")
     with psycopg.connect(POSTGRES_URL) as conn:
@@ -35,7 +35,7 @@ def inspect_sql():
     Returns a string that contains 'table.column: datatype' for each table and column therein.
     Tool has no input, and outputs a single formatted string.
     """
-    POSTGRES_URL = os.getenv("postgres_url")
+    POSTGRES_URL = os.getenv("POSTGRES_URL")
     if POSTGRES_URL is None:
         raise RuntimeError("Error, database url env variable not set")
     SCHEMA_SQL = """
@@ -65,7 +65,7 @@ def query_sql(query) -> list:
     first if not already there.
     """
 
-    POSTGRES_URL = os.getenv("postgres_url")
+    POSTGRES_URL = os.getenv("POSTGRES_URL")
     if POSTGRES_URL is None:
         raise RuntimeError("Error, database url env variable not set")
     query = query.strip()
