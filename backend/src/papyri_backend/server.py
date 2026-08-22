@@ -15,14 +15,9 @@ from .settings import load_environment
 
 load_environment()
 
-# TODO:
-# - build agent singleton for the moment. Session manager + user later
-# -
-# -
-agent = None
 
-
-# TODO: need more complex data models for tool results and stuff
+# TODO: need more complex data models for tool results and stuff?
+# -> only when we go beyond text. not necessary for now.
 class ChatRequest(BaseModel):
     messages: list[Any] = Field(min_length=1)
 
