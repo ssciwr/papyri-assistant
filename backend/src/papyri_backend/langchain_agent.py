@@ -11,7 +11,6 @@ from typing import Any
 import yaml
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend
-
 from langchain.agents.middleware import (
     LLMToolSelectorMiddleware,
     SummarizationMiddleware,
@@ -24,8 +23,10 @@ from .exceptions import InvalidDecision, StaleDecision
 from .utils import utils
 
 # TODO:
-# - integrate with mcp -> connection to database
-# - integrate subagents into fastAPI
+# - integrate pgvector connection
+# - add verification layer
+# - add skills, system prompt, better tool descriptions
+# - mcp?
 
 # Models that reason inline mark the trace as ordinary answer text instead of
 # emitting reasoning events. The tags are matched leniently because whitespace
