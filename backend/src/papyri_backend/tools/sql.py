@@ -6,7 +6,7 @@ from langchain.tools import tool
 from ..verify import sql as sql_verify
 
 
-@tool
+@tool(parse_docstring=True)
 def list_sql_tables():
     """
     List all tables in a pre-connected postgres database.
@@ -34,7 +34,7 @@ def list_sql_tables():
             return [{"message": response}]
 
 
-@tool
+@tool(parse_docstring=True)
 def inspect_sql():
     """
     Get all sql tables and their schema for inspection and orientation.
@@ -64,7 +64,7 @@ def inspect_sql():
             return [{"message": response}]
 
 
-@tool
+@tool(parse_docstring=True)
 def query_sql(query) -> list:
     """Query an already connected sql database and return the result or the error message.
     Connect to a database defined via POSTGRES_URL POSTGRES_USER POSTGRES_PW env variables.

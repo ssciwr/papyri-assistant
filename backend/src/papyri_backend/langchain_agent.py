@@ -17,6 +17,7 @@ from langchain.agents.middleware import (
 )
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
+from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_postgres import PGVector
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -84,21 +85,72 @@ class RetrievalAgent:
         for k, v in (mmr_search_kwargs or {}).items():
             self.mmr_search_kwargs[k] = utils._process_config(v)
 
-    def similarity_search(self, query: str):
+    def similarity_search(self, query: str) -> list[Document]:
         return self.store.similarity_search(query, **self.similarity_search_kwargs)
 
-    def mmr_search(self, query: str):
+    def mmr_search(self, query: str) -> list[Document]:
         return self.store.max_marginal_relevance_search(query, **self.mmr_search_kwargs)
 
-    def similarity_search_by_vec(self, vec: list[float]):
+    def similarity_search_by_vec(self, vec: list[float]) -> list[Document]:
         return self.store.similarity_search_by_vector(
             vec, **self.similarity_search_kwargs
         )
 
-    def mmr_search_by_vec(self, vec: list[float]):
+    def mmr_search_by_vec(self, vec: list[float]) -> list[Document]:
         return self.store.max_marginal_relevance_search_by_vector(
             vec, **self.mmr_search_kwargs
         )
+
+    @staticmethod
+    def _format_documents(documents: list[Document]) -> str:
+        """Render retrieved documents as the text of a chat answer.
+
+        Args:
+            documents: The documents a search returned, in the order the store
+                ranked them.
+
+        Returns:
+            One markdown block per document, carrying its rank, whatever
+            identifies its source in the metadata, and its content. An empty
+            result is reported as such, because a chat answer cannot be empty.
+        """
+        if not documents:
+            return "No matching passages were found."
+
+        blocks = []
+        for rank, document in enumerate(documents, start=1):
+            metadata = document.metadata or {}
+            source = metadata.get("source") or metadata.get("id") or "unknown source"
+            blocks.append(f"**{rank}. {source}**\n\n{document.page_content.strip()}")
+
+        return "\n\n---\n\n".join(blocks)
+
+    def run_single_turn(self, message) -> dict[str, Any]:
+        """Answer one incoming chat message with a plain retrieval.
+
+        No model runs here, so the turn has neither a reasoning trace nor an
+        interrupt to report; both fields are still present, because the client
+        reads the same answer shape whichever mode produced it.
+
+        Args:
+            message: An incoming chat message, whose first content part carries
+                the user's text.
+
+        Returns:
+            The retrieved passages as the answer's ``text``, an empty
+            ``reasoning`` trace and no ``interrupt``. A failed search travels as
+            chat output in place of the answer, as it does for the deep agent.
+        """
+        query = message["content"][0]["text"]
+
+        try:
+            documents = self.similarity_search(query)
+        except Exception as exc:
+            text = f"The retrieval failed: {exc}"
+        else:
+            text = self._format_documents(documents)
+
+        return {"text": text, "reasoning": "", "interrupt": None}
 
 
 class LangChainAgent(BaseAgent):

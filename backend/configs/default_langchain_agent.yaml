@@ -13,6 +13,10 @@ kwargs:
     - papyri_backend.tools.sql.list_sql_tables
     - papyri_backend.tools.sql.inspect_sql
     - papyri_backend.tools.sql.query_sql
+    - papyri_backend.tools.pgvec.similarity_search
+    - papyri_backend.tools.pgvec.mmr_search
+    - papyri_backend.tools.pgvec.similarity_search_by_vec
+    - papyri_backend.tools.pgvec.mmr_search_by_vec
 
   # carefull here: deep_agents adds default middleware indentified by class name!
   middleware:
@@ -37,7 +41,6 @@ kwargs:
       allowed_decisions: ["approve", "reject"]
     delete:
       allowed_decisions: ["approve", "reject"]
-
 
   # TODO: check that these are named right
   permissions:

@@ -86,10 +86,8 @@ async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
         await new_agent()
 
     try:
-        if MODE == "agentic":
+        if MODE in ["agentic", "retrieval"]:
             answer = agent.run_single_turn(raw_messages[-1])
-        elif MODE == "retrieval":
-            answer = agent.similarity_search(raw_messages[-1])
         else:
             raise ValueError(f"Error in  agent communication: Unknown MODE {MODE}")
     except DecisionError:
