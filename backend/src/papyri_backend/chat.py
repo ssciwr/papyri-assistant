@@ -20,8 +20,8 @@ RETRIEVER: RetrievalAgent | None = None
 
 
 async def switch_mode_to(modename: str) -> dict[str, str]:
-    if modename not in ["agentic", "basic"]:
-        raise ValueError("Error, modename has to be either 'agentic' or 'basic'")
+    if modename not in ["agentic", "retrieval"]:
+        raise ValueError("Error, modename has to be either 'agentic' or 'retrieval'")
     global MODE
     MODE = modename
     return {"text": f"Switched mode to {modename}", "reasoning": ""}
@@ -38,7 +38,8 @@ async def new_agent() -> dict[str, str]:
                     str(
                         Path(__file__).resolve().parents[2]
                         / os.getenv(
-                            "RETRIEVER_CONFIG", "configs/default_langchain_agent.yaml"
+                            "RETRIEVER_CONFIG",
+                            "configs/default_langchain_retriever.yaml",
                         )  # TODO: make this env var
                     ),
                 )
@@ -63,7 +64,8 @@ async def new_agent() -> dict[str, str]:
                     str(
                         Path(__file__).resolve().parents[2]
                         / os.getenv(
-                            "RETRIEVER_CONFIG", "configs/default_langchain_agent.yaml"
+                            "RETRIEVER_CONFIG",
+                            "configs/default_langchain_retriever.yaml",
                         )  # TODO: make this env var
                     ),
                 )
