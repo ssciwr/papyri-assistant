@@ -3,6 +3,13 @@
 - [x] review claude code stuff for action stuff
 - [x] implement database connection and retrieval
 - [ ] implement RAG system via semantic search
+    - [ ] agentic
+    - [ ] 2-stage (simple one)
+    - [ ] hybrid with evidence layer/rubric
+- [ ] plan-approve cycle?
 - [ ] add memory for the agent so it can offload stuff from its context
 - [ ] add auto compactification middleware
-- [ ] test everything
+- [ ] implement an evidence layer: hybrid rag workflow with verification agent, criteria, static verification
+- [ ] use skills to define workflows, return formats, work manuals and knowledge
+- [ ] improve the sql verification layer. Currently far too primitve/absent entirely
+- [ ] test everything: frontend, backend, make user stories into bdd tests
