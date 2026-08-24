@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 from papyri_backend.langchain_agent import (
-    create_agent_from_config as make_langchain_agent,
+    create_agent_from_config as make_langchain_deepagent,
 )
 
 
@@ -17,7 +17,7 @@ config = str(
     / os.getenv("AGENT_CONFIG", "backend/configs/default_langchain_agent.yaml"),
 )
 print(config)
-agent = make_langchain_agent(config)
+agent = make_langchain_deepagent(config)
 
 # The agent only answers one turn at a time now, the way the FastAPI handler
 # calls it; the loop around it is this script's own.
