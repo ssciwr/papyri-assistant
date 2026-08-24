@@ -138,34 +138,6 @@ textarea {
   outline-offset: 2px;
 }
 
-.mode-toggle-button {
-  height: 38px;
-  padding: 0 14px;
-  flex: 0 0 auto;
-  border: 1px solid #d6cab8;
-  border-radius: 8px;
-  color: #475467;
-  background: #ffffff;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.mode-toggle-button:hover:not(:disabled) {
-  border-color: #b7a58b;
-  color: #1f2937;
-  background: #f7f4ed;
-}
-
-.mode-toggle-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.mode-toggle-button:focus-visible {
-  outline: 3px solid rgba(180, 83, 42, 0.25);
-  outline-offset: 2px;
-}
-
 .status-pill {
   flex: 0 0 auto;
   padding: 6px 10px;

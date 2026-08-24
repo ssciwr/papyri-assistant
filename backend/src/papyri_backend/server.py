@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from .chat import answer_with_chat, new_agent, switch_mode_to
+from .chat import answer_with_chat, new_agent
 from .exceptions import DecisionError, InvalidDecision, StaleDecision
 from .settings import load_environment
 
@@ -92,16 +92,6 @@ async def invalid_decision_handler(
 @app.get("/health")
 async def health() -> dict[str, bool]:
     return {"ok": True}
-
-
-@app.post("/changemode", response_model=ChatResponse)
-async def change_mode(mode: str) -> JSONResponse | dict[str, str]:
-    try:
-        answer = await switch_mode_to(mode)
-        return answer
-    except Exception as exc:
-        message = str(exc) or "Unexpected error"
-        return JSONResponse(status_code=500, content={"error": message})
 
 
 @app.post("/new", response_model=ChatResponse)

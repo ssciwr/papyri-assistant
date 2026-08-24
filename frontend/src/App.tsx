@@ -3,7 +3,6 @@ import { RuntimeProvider } from "./assistantRuntime";
 import { ChatExportButton } from "./components/ChatExportButton";
 import { ChatThread } from "./components/ChatThread";
 import { DecisionDialog } from "./components/DecisionDialog";
-import { ModeToggleButton } from "./components/ModeToggleButton";
 import { NewSessionButton } from "./components/NewSessionButton";
 
 const warningBannerText =
@@ -30,7 +29,6 @@ export function App() {
               <p>assistant-ui frontend with a LangChain backend</p>
             </div>
             <div className="chat-header-actions">
-              <ModeToggleButton />
               <NewSessionButton />
               <ChatExportButton />
               <span className="status-pill">Local</span>
