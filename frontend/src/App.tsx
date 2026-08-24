@@ -3,6 +3,7 @@ import { RuntimeProvider } from "./assistantRuntime";
 import { ChatExportButton } from "./components/ChatExportButton";
 import { ChatThread } from "./components/ChatThread";
 import { DecisionDialog } from "./components/DecisionDialog";
+import { NewSessionButton } from "./components/NewSessionButton";
 
 const warningBannerText =
   import.meta.env.VITE_WARNING_BANNER_TEXT?.trim() ?? "";
@@ -28,6 +29,7 @@ export function App() {
               <p>assistant-ui frontend with a LangChain backend</p>
             </div>
             <div className="chat-header-actions">
+              <NewSessionButton />
               <ChatExportButton />
               <span className="status-pill">Local</span>
               <a
