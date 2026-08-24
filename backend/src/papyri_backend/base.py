@@ -5,15 +5,10 @@ from typing import Any
 class BaseAgent(ABC):
     """Define the interface for connectors that communicate with AI agents."""
 
-    def __init__(
-        self,
-        options_to_pass: list[str],
-        kwargs: dict[str, Any] | None = None,
-    ):
+    def __init__(self, **kwargs):
         """Initialize a connector with agent command-line options.
 
         Args:
-            options_to_pass: Command-line options passed to the agent process.
             kwargs: Optional keyword arguments for creating the process.
         """
         ...
