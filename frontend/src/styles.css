@@ -78,7 +78,6 @@ textarea {
 }
 
 .export-button,
-.new-session-button,
 .github-issues-link {
   width: 38px;
   height: 38px;
@@ -94,7 +93,6 @@ textarea {
 }
 
 .export-button:hover:not(:disabled),
-.new-session-button:hover:not(:disabled),
 .github-issues-link:hover {
   border-color: #b7a58b;
   color: #1f2937;
@@ -102,7 +100,6 @@ textarea {
 }
 
 .export-button:focus-visible,
-.new-session-button:focus-visible,
 .github-issues-link:focus-visible {
   outline: 3px solid rgba(180, 83, 42, 0.25);
   outline-offset: 2px;
@@ -114,10 +111,31 @@ textarea {
   display: block;
 }
 
-.export-button:disabled,
+.export-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.new-session-button {
+  height: 38px;
+  padding: 0 14px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #b4532a;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .new-session-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.new-session-button:focus-visible {
+  outline: 3px solid rgba(180, 83, 42, 0.25);
+  outline-offset: 2px;
 }
 
 .status-pill {
