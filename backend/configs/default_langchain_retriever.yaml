@@ -1,0 +1,11 @@
+embeddingmodel: Qwen3/Qwen3-Embedding-8B
+embeddings_type: langchain_huggingface.HuggingFaceEmbeddings
+embeddings_kwargs:
+  normalize_embeddings: True
+store_kwargs:
+  collection_name: embeddings
+similarity_search_kwargs:
+  k: 1
+mmr_search_kwargs:
+  k: 4
+# ps_connection: postgres://... # given by env
