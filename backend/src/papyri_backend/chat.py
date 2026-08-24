@@ -10,8 +10,29 @@ from .langchain_agent import create_agent_from_config as make_langchain_agent
 _DEFAULT_SYSTEM_PROMPT = "You are a concise, helpful assistant."
 _MAX_CONTEXT_MESSAGES = 9
 
+CONFIG = os.getenv("CONFIGFILE", "configs/default_langchain_agent.yaml")
 
 agent = None
+
+
+async def new_agent() -> dict[str, str]:
+    try:
+        global agent
+        agent = make_langchain_agent(
+            os.getenv(
+                "AGENT_CONFIG",
+                str(
+                    Path(__file__).resolve().parents[2]
+                    / CONFIG  # TODO: make this env var
+                ),
+            )
+        )
+        return {"text": "Agent has been restarted"}
+    except Exception as e:
+        return {
+            "text": f"Exception happened in agent construction: {e}",
+            "reasoning": "",
+        }
 
 
 async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
@@ -23,10 +44,7 @@ async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
             agent = make_langchain_agent(
                 os.getenv(
                     "AGENT_CONFIG",
-                    str(
-                        Path(__file__).resolve().parents[2]
-                        / "configs/default_langchain_agent.yaml"
-                    ),
+                    str(Path(__file__).resolve().parents[2] / CONFIG),
                 )
             )
         except Exception as e:
