@@ -5,29 +5,72 @@ from pathlib import Path
 from typing import Any
 
 from .exceptions import DecisionError
-from .langchain_agent import create_agent_from_config as make_langchain_agent
+from .langchain_agent import (
+    make_langchain_deepagent,
+    make_langchain_retriever,
+    LangChainAgent,
+    RetrievalAgent,
+)
 
-_DEFAULT_SYSTEM_PROMPT = "You are a concise, helpful assistant."
-_MAX_CONTEXT_MESSAGES = 9
 
-CONFIG = os.getenv("CONFIGFILE", "configs/default_langchain_agent.yaml")
+MODE = "agentic"
 
-agent = None
+agent: LangChainAgent | RetrievalAgent | None = None
+RETRIEVER: RetrievalAgent | None = None
+
+
+async def switch_mode_to(modename: str) -> dict[str, str]:
+    if modename not in ["agentic", "basic"]:
+        raise ValueError("Error, modename has to be either 'agentic' or 'basic'")
+    global MODE
+    MODE = modename
+    return {"text": f"Switched mode to {modename}", "reasoning": ""}
 
 
 async def new_agent() -> dict[str, str]:
+    global agent
+    global RETRIEVER
     try:
-        global agent
-        agent = make_langchain_agent(
-            os.getenv(
-                "AGENT_CONFIG",
-                str(
-                    Path(__file__).resolve().parents[2]
-                    / CONFIG  # TODO: make this env var
-                ),
+        if MODE == "agentic":
+            RETRIEVER = make_langchain_retriever(
+                os.getenv(
+                    "RETRIEVER_CONFIG",
+                    str(
+                        Path(__file__).resolve().parents[2]
+                        / os.getenv(
+                            "RETRIEVER_CONFIG", "configs/default_langchain_agent.yaml"
+                        )  # TODO: make this env var
+                    ),
+                )
             )
-        )
-        return {"text": "Agent has been restarted"}
+
+            agent = make_langchain_deepagent(
+                os.getenv(
+                    "AGENT_CONFIG",
+                    str(
+                        Path(__file__).resolve().parents[2]
+                        / os.getenv(
+                            "AGENT_CONFIG", "configs/default_langchain_agent.yaml"
+                        )  # TODO: make this env var
+                    ),
+                )
+            )
+            return {"text": "DeepAgent has been restarted"}
+        elif MODE == "retrieval":
+            agent = make_langchain_retriever(
+                os.getenv(
+                    "RETRIEVER_CONFIG",
+                    str(
+                        Path(__file__).resolve().parents[2]
+                        / os.getenv(
+                            "RETRIEVER_CONFIG", "configs/default_langchain_agent.yaml"
+                        )  # TODO: make this env var
+                    ),
+                )
+            )
+            return {"text": "RetrieverAgent has been restarted"}
+        else:
+            raise ValueError(f"Error in  agent creation: Unknown Mode {MODE}")
     except Exception as e:
         return {
             "text": f"Exception happened in agent construction: {e}",
@@ -38,23 +81,17 @@ async def new_agent() -> dict[str, str]:
 async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
 
     # currently use a singleton agent b/c we only have a local usage
-    global agent
+
     if agent is None:
-        try:
-            agent = make_langchain_agent(
-                os.getenv(
-                    "AGENT_CONFIG",
-                    str(Path(__file__).resolve().parents[2] / CONFIG),
-                )
-            )
-        except Exception as e:
-            return {
-                "text": f"Exception happened in agent construction: {e}",
-                "reasoning": "",
-            }
+        await new_agent()
 
     try:
-        answer = agent.run_single_turn(raw_messages[-1])
+        if MODE == "agentic":
+            answer = agent.run_single_turn(raw_messages[-1])
+        elif MODE == "retrieval":
+            answer = agent.similarity_search(raw_messages[-1])
+        else:
+            raise ValueError(f"Error in  agent communication: Unknown MODE {MODE}")
     except DecisionError:
         # A refused decision is a protocol error, not agent output: it carries a
         # status code the transport turns into a failed request.

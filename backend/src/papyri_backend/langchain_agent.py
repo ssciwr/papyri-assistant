@@ -17,16 +17,18 @@ from langchain.agents.middleware import (
 )
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_postgres import PGVector
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from typing import Any
+from pathlib import Path
+import yaml
+
 
 from .base import BaseAgent
 from .exceptions import InvalidDecision, StaleDecision
 from .utils import utils
 
-# TODO:
-# - integrate pgvector connection
-# - add verification layer
-# - add skills, system prompt, better tool descriptions
-# - mcp?
 
 # Models that reason inline mark the trace as ordinary answer text instead of
 # emitting reasoning events. The tags are matched leniently because whitespace
@@ -35,26 +37,68 @@ _THINK_OPEN = re.compile(r"<\s*think\s*>", re.IGNORECASE)
 _THINK_CLOSE = re.compile(r"</\s*think\s*>", re.IGNORECASE)
 
 
-def create_agent_from_config(path: str):
-    """TODO
+class RetrievalAgent:
+    def __init__(
+        self,
+        embeddingmodel: str,
+        ps_connection: str | None = None,
+        embeddings_type: str = "langchain_huggingface.HuggingFaceEmbeddings",
+        store_kwargs: dict[str, Any] | None = None,
+        embeddings_kwargs: dict[str, Any] | None = None,
+        similarity_search_kwargs: dict[str, Any] | None = None,
+        mmr_search_kwargs: dict[str, Any] | None = None,
+    ):
+        """_summary_
 
-    Args:
-        path (str): TODO
+        Args:
+            embeddingmodel (str): _description_
+            ps_connection (str | None, optional): _description_. Defaults to None.
+            embeddings_type (str, optional): _description_. Defaults to "langchain_huggingface.HuggingFaceEmbeddings".
+            store_kwargs (dict[str, Any] | None, optional): _description_. Defaults to None.
+            embeddings_kwargs (dict[str, Any] | None, optional): _description_. Defaults to None.
+            similarity_search_kwargs (dict[str, Any] | None, optional): _description_. Defaults to None.
+            mmr_search_kwargs (dict[str, Any] | None, optional): _description_. Defaults to None.
 
-    Returns:
-        _type_: TODO
-    """
+        Raises:
+            ValueError: _description_
+        """
+        ps_conn = ps_connection or os.getenv("POSTGRES_URL")
 
-    with open(Path(path).resolve(), "r") as f:
-        config = yaml.safe_load(f)
+        if ps_conn is None:
+            raise ValueError(
+                "Error, no connection to postgres database given. Either give 'ps_connection' or set the 'POSTGRES_URL' environment variable. "
+            )
 
-    # recurse
+        embed_tp = utils.load_type(embeddings_type)
+        self.embeddings = embed_tp(
+            model_name=embeddingmodel, **(embeddings_kwargs or {})
+        )
+        self.store = PGVector(
+            embeddings=self.embeddings, connection=ps_connection, **(store_kwargs or {})
+        )
+        self.similarity_search_kwargs = {}
+        for k, v in (similarity_search_kwargs or {}).items():
+            self.similarity_search_kwargs[k] = utils._process_config(v)
 
-    cfg = {}
-    for k, v in config.items():
-        cfg[k] = utils._process_config(v)
+        self.mmr_search_kwargs = {}
+        for k, v in (mmr_search_kwargs or {}).items():
+            self.mmr_search_kwargs[k] = utils._process_config(v)
 
-    return LangChainAgent([], **cfg)
+    def similarity_search(self, query: str):
+        return self.store.similarity_search(query, **self.similarity_search_kwargs)
+
+    def mmr_search(self, query: str):
+        return self.store.max_marginal_relevance_search(query, **self.mmr_search_kwargs)
+
+    def similarity_search_by_vec(self, vec: list[float]):
+        return self.store.similarity_search_by_vector(
+            vec, **self.similarity_search_kwargs
+        )
+
+    def mmr_search_by_vec(self, vec: list[float]):
+        return self.store.max_marginal_relevance_search_by_vector(
+            vec, **self.mmr_search_kwargs
+        )
 
 
 class LangChainAgent(BaseAgent):
@@ -62,15 +106,11 @@ class LangChainAgent(BaseAgent):
 
     def __init__(
         self,
-        options_to_pass: list[str],
         kwargs: Mapping[str, Any] | None = None,
     ):
         """Build a deep agent.
 
         Args:
-            options_to_pass: Unused. The interface carries command-line options
-                for connectors that drive an agent subprocess; a deep agent is
-                built in-process from keyword arguments instead.
             kwargs: Keyword arguments for ``create_deep_agent``, such as
                 ``model``, ``tools``, ``system_prompt`` and ``interrupt_on``.
                 ``middleware`` and ``permissions`` are given as
@@ -78,7 +118,6 @@ class LangChainAgent(BaseAgent):
                 A ``checkpointer`` is added when none is supplied, because
                 interrupts cannot be resumed without one.
         """
-        super().__init__(options_to_pass, kwargs)
 
         agent_kwargs = dict(kwargs or {})
         agent_kwargs.setdefault(
@@ -108,9 +147,7 @@ class LangChainAgent(BaseAgent):
             backend = self._build_backend(agent_kwargs["backend"])
             agent_kwargs["backend"] = backend
 
-        if "store" in agent_kwargs:
-            store = self._build_store(agent_kwargs["store"])
-            agent_kwargs["store"] = store
+        super().__init__(**agent_kwargs)
 
         self.agent = create_deep_agent(**agent_kwargs)
         self.thread_id = str(uuid.uuid4())
@@ -242,10 +279,6 @@ class LangChainAgent(BaseAgent):
             routes[route] = backend_def["typename"](**backend_def.get("kwargs", {}))
 
         return CompositeBackend(default=default, routes=routes)
-
-    @staticmethod
-    def _build_store(store_specs: Mapping[str, Any]) -> Any:
-        return None
 
     @property
     def _config(
@@ -594,3 +627,35 @@ class LangChainAgent(BaseAgent):
             self._run = None
 
         return 0
+
+
+def make_langchain_retriever(
+    path: str,
+) -> RetrievalAgent:
+
+    with open(Path(path).resolve(), "r") as f:
+        config = yaml.safe_load(f)
+
+    return RetrievalAgent(**config)
+
+
+def make_langchain_deepagent(path: str) -> LangChainAgent:
+    """TODO
+
+    Args:
+        path (str): TODO
+
+    Returns:
+        _type_: TODO
+    """
+
+    with open(Path(path).resolve(), "r") as f:
+        config = yaml.safe_load(f)
+
+    # recurse
+
+    cfg = {}
+    for k, v in config.items():
+        cfg[k] = utils._process_config(v)
+
+    return LangChainAgent(**cfg)
