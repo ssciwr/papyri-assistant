@@ -1,12 +1,15 @@
-embeddingmodel: Qwen/Qwen3-Embedding-8B
-embeddings_type: langchain_huggingface.HuggingFaceEmbeddings
-embeddings_kwargs:
-  encode_kwargs:
-    normalize_embeddings: True
+embeddings:
+  type: langchain_huggingface.HuggingFaceEmbeddings
+  kwargs:
+    model_name: Qwen/Qwen3-Embedding-8B
+    encode_kwargs:
+      normalize_embeddings: True
+
+# The database connection comes from the POSTGRES_URL environment variable.
 store_kwargs:
   collection_name: embeddings
+
 similarity_search_kwargs:
   k: 1
 mmr_search_kwargs:
   k: 4
-# ps_connection: postgres://... # given by env

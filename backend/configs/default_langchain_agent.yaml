@@ -1,116 +1,120 @@
-kwargs:
-  name: defaultAgent
-  model:
-    type: langchain_openai.ChatOpenAI
+name: defaultAgent
+
+model:
+  type: langchain_openai.ChatOpenAI
+  kwargs:
+    model: ${LLM_MODEL}
+    base_url: ${LLM_API_URL}
+    api_key: ${LLM_API_KEY:-EMPTY}
+    temperature: 0.0
+
+# Caller-authored system instructions, placed before the deepagents base prompt.
+system_prompt: "You are a concise, helpful assistant, expert in papyrology and expert in Postgres sql and postgres-vector. You know how to use semantic and mmr search with queries and vectors, what the best search strategies are for a given problem, and how to efficiently work with large databases of digitalized, annotated ancient documents." # TODO
+
+tools:
+  - papyri_backend.tools.sql.list_sql_tables
+  - papyri_backend.tools.sql.inspect_sql
+  - papyri_backend.tools.sql.query_sql
+  - papyri_backend.tools.pgvec.similarity_search
+  - papyri_backend.tools.pgvec.mmr_search
+  - papyri_backend.tools.pgvec.similarity_search_by_vec
+  - papyri_backend.tools.pgvec.mmr_search_by_vec
+
+# carefull here: deep_agents adds default middleware indentified by class name!
+# A middleware that takes a "model" argument is given the agent's own unless the
+# config sets one here.
+middleware:
+  - type: langchain.agents.middleware.SummarizationMiddleware
+    kwargs: {}
+  - type: langchain.agents.middleware.TodoListMiddleware
+    kwargs: {}
+
+# "reject" carries an optional reason, which reaches the model as the refused
+# tool call's result. Saying what to do instead belongs there rather than in a
+# follow-up message, so the model knows which action was refused and why.
+# "edit" is deliberately absent: rewriting tool arguments by hand is a worse
+# way to redirect the agent than telling it what you actually want.
+# Keys are tool names, checked against the agent's tools at construction.
+interrupt_on:
+  write_file: &approve_reject
+    allowed_decisions: ["approve", "reject"]
+  edit_file: *approve_reject
+  read_file: *approve_reject
+  execute: *approve_reject # only fires with a sandbox backend; see "backend"
+  delete: *approve_reject
+
+# operations are filesystem operations, not tool names: only "read" and
+# "write" exist. read_file/glob/grep/ls count as read; write_file/edit_file/
+# delete count as write.
+permissions:
+  - type: deepagents.FilesystemPermission
     kwargs:
-      temperature: 0.0
-    # model, api key and base_url are set via env vars
+      operations: ["read", "write"]
+      paths: ["/app/secrets"]
+      mode: "deny"
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["read", "write"]
+      paths: ["/app/workspace"]
+      mode: "allow"
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["read", "write"]
+      paths: ["/app/memory"]
+      mode: "allow"
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["read"]
+      paths: ["/app/skills"]
+      mode: "allow"
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["write"]
+      paths: ["/app/skills"]
+      mode: "deny"
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["write"]
+      paths: ["/app/logs"]
+      mode: "deny"
 
-  # Caller-authored system instructions, placed before the deepagents base prompt.
-  system_prompt: &sysprompt "You are a concise, helpful assistant, expert in papyrology and expert in Postgres sql and postgres-vector. You know how to use semantic and mmr search with queries and vectors, what the best search strategies are for a given problem, and how to efficiently work with large databases of digitalized, annotated ancient documents." # TODO
-
-  tools:
-    - papyri_backend.tools.sql.list_sql_tables
-    - papyri_backend.tools.sql.inspect_sql
-    - papyri_backend.tools.sql.query_sql
-    - papyri_backend.tools.pgvec.similarity_search
-    - papyri_backend.tools.pgvec.mmr_search
-    - papyri_backend.tools.pgvec.similarity_search_by_vec
-    - papyri_backend.tools.pgvec.mmr_search_by_vec
-
-  # carefull here: deep_agents adds default middleware indentified by class name!
-  middleware:
-    - type: langchain.agents.middleware.SummarizationMiddleware
+# Routes backends by directory. The default is in-state, so files live in graph
+# state and "execute" returns an error until a sandbox backend is set.
+backend:
+  type: deepagents.backends.CompositeBackend
+  kwargs:
+    default:
+      type: deepagents.backends.StateBackend
       kwargs: {}
-    - type: langchain.agents.middleware.TodoListMiddleware
-      kwargs: {}
-
-  # "reject" carries an optional reason, which reaches the model as the refused
-  # tool call's result. Saying what to do instead belongs there rather than in a
-  # follow-up message, so the model knows which action was refused and why.
-  # "edit" is deliberately absent: rewriting tool arguments by hand is a worse
-  # way to redirect the agent than telling it what you actually want.
-  interrupt_on:
-    write_file:
-      allowed_decisions: ["approve", "reject"]
-    edit:
-      allowed_decisions: ["approve", "reject"]
-    read_file:
-      allowed_decisions: ["approve", "reject"]
-    execute: # only ever fires with a sandbox backend; see "backend" below
-      allowed_decisions: ["approve", "reject"]
-    delete:
-      allowed_decisions: ["approve", "reject"]
-
-  # TODO: check that these are named right
-  permissions:
-    - type: deepagents.FilesystemPermission
-      kwargs:
-        operations: ["read_file", "write_file", "delete", "edit"]
-        paths: ["/app/secrets"]
-        mode: "deny"
-    - type: deepagents.FilesystemPermission
-      kwargs:
-        operations: ["read_file", "write_file"]
-        paths: ["/app/workspace"]
-        mode: "allow"
-    - type: deepagents.FilesystemPermission
-      kwargs:
-        operations: ["read_file", "write_file", "edit"]
-        paths: ["/app/memory"]
-        mode: "allow"
-    - type: deepagents.FilesystemPermission
-      kwargs:
-        operations: ["read_file"]
-        paths: ["/app/skills"]
-        mode: "allow"
-    - type: deepagents.FilesystemPermission
-      kwargs:
-        operations: ["write_file", "delete", "edit"]
-        paths: ["/app/skills"]
-        mode: "deny"
-
-    - type: deepagents.FilesystemPermission
-      kwargs:
-        operations: ["write_file", "delete", "edit"]
-        paths: ["/app/logs"]
-        mode: "deny"
-
-    # backend: Always uses a composite Backend that routes backends by directory.
-    # defaults to an in-state one, so files live in
-    #   graph state and "execute" returns an error until a sandbox backend is set
-  backend:
-    default_typename: deepagents.backends.StateBackend
-    default_kwargs: {}
     routes:
       "/workspace/":
-        typename: deepagents.backends.FilesystemBackend
+        type: deepagents.backends.FilesystemBackend
         kwargs:
           virtual_mode: True
-          root_dir: /app/workspace
+          root_dir: ${WORKSPACE_DIR:-/app/workspace}
       "/memory/":
-        typename: deepagents.backends.FilesystemBackend
+        type: deepagents.backends.FilesystemBackend
         kwargs:
           virtual_mode: True
-          root_dir: /app/memory
+          root_dir: ${MEMORY_DIR:-/app/memory}
 
-  # Named subagents the "task" tool can delegate to. Each entry needs name,
-  # description and system_prompt, and may add tools/model/interrupt_on.
-  # TODO: fill in once the papyrological subagents are defined.
-  # subagents: []
+# Named subagents the "task" tool can delegate to. Each entry needs name,
+# description and system_prompt, and may add tools/model/interrupt_on.
+# TODO: fill in once the papyrological subagents are defined.
+# subagents: []
 
-  # checkpointer: LangChainAgent already installs a
-  #   langgraph.checkpoint.memory.InMemorySaver when none is given, because
-  #   interrupts cannot be resumed without one. Set it here to persist threads,
-  #   e.g. type: langgraph.checkpoint.sqlite.SqliteSaver
+# checkpointer: LangChainAgent installs a
+#   langgraph.checkpoint.memory.InMemorySaver when none is given, because
+#   interrupts cannot be resumed without one. Set it here to persist threads,
+#   e.g. type: langgraph.checkpoint.sqlite.SqliteSaver
 
-  # store: BaseStore for cross-thread state, required by the "memory" kwarg below
+# store: BaseStore for cross-thread state, required by the "memory" kwarg below
 
-  # memory: list of AGENTS.md-style files loaded as persistent context
+# memory: list of AGENTS.md-style files loaded as persistent context
 
-  # skills: list of skill directories exposed to the agent
+# skills: list of skill directories exposed to the agent
 
-  # response_format: structured-output strategy for the final answer
+# response_format: structured-output strategy for the final answer
 
-  # state_schema / context_schema: custom DeepAgentState / runtime context types
-  # name, debug, cache: graph name, verbose tracing, and a langgraph cache
+# state_schema / context_schema: custom DeepAgentState / runtime context types
+# name, debug, cache: graph name, verbose tracing, and a langgraph cache
