@@ -25,7 +25,7 @@ class FakeAgent:
 
 def use(monkeypatch, agent) -> None:
     """Install a session backed by the given fake agent."""
-    fake = session.Session(agent=agent, retriever=object())
+    fake = session.Session(agent=agent, retriever=object(), connection=object())
     monkeypatch.setattr(session, "_CURRENT", fake)
 
 

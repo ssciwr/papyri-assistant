@@ -52,11 +52,10 @@ def test_separately_reported_reasoning_is_collected() -> None:
     assert turn.as_answer(None)["reasoning"] == "reasoning"
 
 
-def test_a_tool_call_between_two_reasoning_messages_stays_in_the_answer() -> None:
+def test_a_tool_call_between_two_reasoning_messages_stays_in_the_trace() -> None:
     # The mainline path for this agent: a reasoning model that calls a tool.
-    # Splitting across the whole turn instead of per message let the second
-    # message's closing tag swallow the first message's answer and the
-    # tool-call block into the reasoning trace.
+    # The tool calls belong to the trace rather than to the answer, which is
+    # what the user reads, and the answer text around them stays out of it.
     turn = TurnOutput()
     turn.add_message(
         "<think>step one</think>Let me look that up.",
@@ -68,9 +67,11 @@ def test_a_tool_call_between_two_reasoning_messages_stays_in_the_answer() -> Non
     answer = turn.as_answer(None)
 
     assert "Let me look that up." in answer["text"]
-    assert "Using tool: query_sql" in answer["text"]
     assert "Done." in answer["text"]
-    assert answer["reasoning"] == "step onestep two"
+    assert "Using tool: query_sql" not in answer["text"]
+    assert "Using tool: query_sql" in answer["reasoning"]
+    assert "step one" in answer["reasoning"]
+    assert "step two" in answer["reasoning"]
     assert "Let me look that up." not in answer["reasoning"]
 
 
