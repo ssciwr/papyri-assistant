@@ -1,7 +1,8 @@
-embeddingmodel: Qwen3/Qwen3-Embedding-8B
+embeddingmodel: Qwen/Qwen3-Embedding-8B
 embeddings_type: langchain_huggingface.HuggingFaceEmbeddings
 embeddings_kwargs:
-  normalize_embeddings: True
+  encode_kwargs:
+    normalize_embeddings: True
 store_kwargs:
   collection_name: embeddings
 similarity_search_kwargs:
