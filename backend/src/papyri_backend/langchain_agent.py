@@ -20,6 +20,8 @@ from langgraph.types import Command
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_postgres import PGVector
+from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from typing import Any
 from pathlib import Path
@@ -42,7 +44,6 @@ class RetrievalAgent:
     def __init__(
         self,
         embeddingmodel: str,
-        ps_connection: str | None = None,
         embeddings_type: str = "langchain_huggingface.HuggingFaceEmbeddings",
         store_kwargs: dict[str, Any] | None = None,
         embeddings_kwargs: dict[str, Any] | None = None,
@@ -63,7 +64,7 @@ class RetrievalAgent:
         Raises:
             ValueError: _description_
         """
-        ps_conn = ps_connection or os.getenv("POSTGRES_URL")
+        ps_conn = os.getenv("POSTGRES_URL")
 
         if ps_conn is None:
             raise ValueError(
@@ -74,9 +75,22 @@ class RetrievalAgent:
         self.embeddings = embed_tp(
             model_name=embeddingmodel, **(embeddings_kwargs or {})
         )
+
+        if store_kwargs is not None and "connection" in store_kwargs:
+            raise ValueError(
+                "connection is not allowed in store kwargs. use the env variable POSTGRES_URL to set the database connection"
+            )
+        # SQLAlchemy resolves a bare ``postgresql://`` URL to psycopg2, which is
+        # not installed. Naming psycopg3 on the engine keeps that choice local to
+        # this store, so POSTGRES_URL stays the one plain URL the sql tools read.
+        engine = create_engine(make_url(ps_conn).set(drivername="postgresql+psycopg"))
+
         self.store = PGVector(
-            embeddings=self.embeddings, connection=ps_connection, **(store_kwargs or {})
+            embeddings=self.embeddings,
+            connection=engine,
+            **(store_kwargs or {}),
         )
+
         self.similarity_search_kwargs = {}
         for k, v in (similarity_search_kwargs or {}).items():
             self.similarity_search_kwargs[k] = utils._process_config(v)
@@ -688,7 +702,11 @@ def make_langchain_retriever(
     with open(Path(path).resolve(), "r") as f:
         config = yaml.safe_load(f)
 
-    return RetrievalAgent(**config)
+    cfg = {}
+    for k, v in config.items():
+        cfg[k] = utils._process_config(v)
+    retrieval_agent = RetrievalAgent(**cfg)
+    return retrieval_agent
 
 
 def make_langchain_deepagent(path: str) -> LangChainAgent:
@@ -700,14 +718,10 @@ def make_langchain_deepagent(path: str) -> LangChainAgent:
     Returns:
         _type_: TODO
     """
-
     with open(Path(path).resolve(), "r") as f:
         config = yaml.safe_load(f)
-
-    # recurse
 
     cfg = {}
     for k, v in config.items():
         cfg[k] = utils._process_config(v)
-
     return LangChainAgent(**cfg)

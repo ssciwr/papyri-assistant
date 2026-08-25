@@ -13,16 +13,26 @@ from .langchain_agent import (
 )
 
 
-agent: LangChainAgent | None = None
+AGENT: LangChainAgent | None = None
 RETRIEVER: RetrievalAgent | None = None
 
 
-async def new_agent() -> dict[str, str]:
-    global agent
+def new_agent() -> dict[str, str]:
+    global AGENT
     global RETRIEVER
     try:
-        # The retriever is not an agent of its own: it backs the search tools the
-        # deep agent calls, which is what makes the agentic path a RAG one.
+        AGENT = make_langchain_deepagent(
+            os.getenv(
+                "AGENT_CONFIG",
+                str(
+                    Path(__file__).resolve().parents[2]
+                    / os.getenv("AGENT_CONFIG", "configs/default_langchain_agent.yaml")
+                ),
+            )
+        )
+
+        # The retriever is not an AGENT of its own: it backs the search tools the
+        # deep AGENT calls, which is what makes the agentic path into RAG.
         RETRIEVER = make_langchain_retriever(
             os.getenv(
                 "RETRIEVER_CONFIG",
@@ -31,44 +41,37 @@ async def new_agent() -> dict[str, str]:
                     / os.getenv(
                         "RETRIEVER_CONFIG",
                         "configs/default_langchain_retriever.yaml",
-                    )  # TODO: make this env var
+                    )
                 ),
             )
         )
-
-        agent = make_langchain_deepagent(
-            os.getenv(
-                "AGENT_CONFIG",
-                str(
-                    Path(__file__).resolve().parents[2]
-                    / os.getenv(
-                        "AGENT_CONFIG", "configs/default_langchain_agent.yaml"
-                    )  # TODO: make this env var
-                ),
-            )
-        )
-        return {"text": "DeepAgent has been restarted"}
     except Exception as e:
-        return {
-            "text": f"Exception happened in agent construction: {e}",
-            "reasoning": "",
-        }
+        raise RuntimeError(f"Error during agent construction: {e}") from e
+
+    if AGENT is None or RETRIEVER is None:
+        raise ValueError("Error, Agents have not been constructed")
+    return {"text": "DeepAgent has been restarted"}
 
 
 async def answer_with_chat(raw_messages: list[Any]) -> dict[str, str]:
+    # currently use a singleton AGENT b/c we only have a local usage
+    global AGENT
+    global RETRIEVER
 
-    # currently use a singleton agent b/c we only have a local usage
-
-    if agent is None:
-        await new_agent()
-
+    if AGENT is None or RETRIEVER is None:
+        new_agent()
     try:
-        answer = agent.run_single_turn(raw_messages[-1])
+        answer = AGENT.run_single_turn(raw_messages[-1])
     except DecisionError:
-        # A refused decision is a protocol error, not agent output: it carries a
+        # A refused decision is a protocol error, not AGENT output: it carries a
         # status code the transport turns into a failed request.
         raise
     except Exception as e:
-        answer = {"text": f"Exception happened in chat: {e}", "reasoning": ""}
+        answer = {
+            "text": f"Exception happened in chat: {e}. Start a new session to clear the error",
+            "reasoning": "",
+        }
 
+        AGENT = None
+        RETRIEVER = None
     return answer

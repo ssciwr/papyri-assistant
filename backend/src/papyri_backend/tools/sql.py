@@ -3,8 +3,6 @@ import os  # for getting postgres specs
 import psycopg
 from langchain.tools import tool
 
-from ..verify import sql as sql_verify
-
 
 @tool(parse_docstring=True)
 def list_sql_tables():
@@ -76,7 +74,6 @@ def query_sql(query) -> list:
         raise RuntimeError("Error, database url env variable not set")
     query = query.strip()
 
-    sql_verify.sql_query_verifier(query)
     response = "nothing"
     with psycopg.connect(POSTGRES_URL) as db, db.cursor() as cursor:
         try:

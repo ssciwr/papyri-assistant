@@ -97,7 +97,7 @@ async def health() -> dict[str, bool]:
 @app.post("/new", response_model=ChatResponse)
 async def new() -> JSONResponse | dict[str, str]:
     try:
-        answer = await new_agent()
+        answer = new_agent()
         return answer
     except Exception as exc:
         message = str(exc) or "Unexpected error"

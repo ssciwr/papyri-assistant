@@ -7,7 +7,7 @@ kwargs:
     # model, api key and base_url are set via env vars
 
   # Caller-authored system instructions, placed before the deepagents base prompt.
-  system_prompt: &sysprompt "You are a concise, helpful assistant, expert in papyrology and expert in Postgres sql and postgres-vector" # TODO
+  system_prompt: &sysprompt "You are a concise, helpful assistant, expert in papyrology and expert in Postgres sql and postgres-vector. You know how to use semantic and mmr search with queries and vectors, what the best search strategies are for a given problem, and how to efficiently work with large databases of digitalized, annotated ancient documents." # TODO
 
   tools:
     - papyri_backend.tools.sql.list_sql_tables
