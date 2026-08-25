@@ -41,6 +41,8 @@ _THINK_CLOSE = re.compile(r"</\s*think\s*>", re.IGNORECASE)
 
 
 class RetrievalAgent:
+    """Answer questions by searching a vector store, without running a model."""
+
     def __init__(
         self,
         embeddingmodel: str,
@@ -50,19 +52,28 @@ class RetrievalAgent:
         similarity_search_kwargs: dict[str, Any] | None = None,
         mmr_search_kwargs: dict[str, Any] | None = None,
     ):
-        """_summary_
+        """Build the embeddings and the vector store the searches run against.
+
+        The database connection is read from the ``POSTGRES_URL`` environment
+        variable.
 
         Args:
-            embeddingmodel (str): _description_
-            ps_connection (str | None, optional): _description_. Defaults to None.
-            embeddings_type (str, optional): _description_. Defaults to "langchain_huggingface.HuggingFaceEmbeddings".
-            store_kwargs (dict[str, Any] | None, optional): _description_. Defaults to None.
-            embeddings_kwargs (dict[str, Any] | None, optional): _description_. Defaults to None.
-            similarity_search_kwargs (dict[str, Any] | None, optional): _description_. Defaults to None.
-            mmr_search_kwargs (dict[str, Any] | None, optional): _description_. Defaults to None.
+            embeddingmodel: Name of the embedding model, passed to the
+                embeddings class as ``model_name``.
+            embeddings_type: Dotted path of the embeddings class to build, or
+                the class itself.
+            store_kwargs: Keyword arguments for ``PGVector``, such as
+                ``collection_name``. ``connection`` is not accepted here.
+            embeddings_kwargs: Further keyword arguments for the embeddings
+                class, such as ``encode_kwargs``.
+            similarity_search_kwargs: Keyword arguments applied to every
+                similarity search, such as the number of results ``k``.
+            mmr_search_kwargs: Keyword arguments applied to every maximal
+                marginal relevance search, such as ``k``.
 
         Raises:
-            ValueError: _description_
+            ValueError: ``POSTGRES_URL`` is unset, or ``store_kwargs`` carries a
+                ``connection`` of its own.
         """
         ps_conn = os.getenv("POSTGRES_URL")
 
@@ -100,17 +111,49 @@ class RetrievalAgent:
             self.mmr_search_kwargs[k] = utils._process_config(v)
 
     def similarity_search(self, query: str) -> list[Document]:
+        """Find the documents closest to a query.
+
+        Args:
+            query: The text to search for. It is embedded before the search.
+
+        Returns:
+            The matching documents, ranked by similarity.
+        """
         return self.store.similarity_search(query, **self.similarity_search_kwargs)
 
     def mmr_search(self, query: str) -> list[Document]:
+        """Find documents for a query, trading similarity for variety.
+
+        Args:
+            query: The text to search for. It is embedded before the search.
+
+        Returns:
+            The matching documents, ranked by maximal marginal relevance.
+        """
         return self.store.max_marginal_relevance_search(query, **self.mmr_search_kwargs)
 
     def similarity_search_by_vec(self, vec: list[float]) -> list[Document]:
+        """Find the documents closest to an already embedded query.
+
+        Args:
+            vec: The query's embedding, in the embedding model's dimension.
+
+        Returns:
+            The matching documents, ranked by similarity.
+        """
         return self.store.similarity_search_by_vector(
             vec, **self.similarity_search_kwargs
         )
 
     def mmr_search_by_vec(self, vec: list[float]) -> list[Document]:
+        """Find documents for an already embedded query, favouring variety.
+
+        Args:
+            vec: The query's embedding, in the embedding model's dimension.
+
+        Returns:
+            The matching documents, ranked by maximal marginal relevance.
+        """
         return self.store.max_marginal_relevance_search_by_vector(
             vec, **self.mmr_search_kwargs
         )
@@ -331,7 +374,18 @@ class LangChainAgent(BaseAgent):
 
     @staticmethod
     def _build_backend(backend_specs: Mapping[str, Mapping[str, Any]]) -> Any:
+        """Build the agent's file backend from its config entry.
 
+        Args:
+            backend_specs: A mapping carrying ``default_typename`` and optional
+                ``default_kwargs`` for the fallback backend, plus ``routes``,
+                which maps a directory to a ``{"typename": ..., "kwargs": {...}}``
+                entry for the backend serving it.
+
+        Returns:
+            A ``CompositeBackend`` routing each configured directory to its own
+            backend and everything else to the default one.
+        """
         processed_backend_specs = {}
         for k, v in backend_specs.items():
             processed_backend_specs[k] = utils._process_config(v)
@@ -698,7 +752,16 @@ class LangChainAgent(BaseAgent):
 def make_langchain_retriever(
     path: str,
 ) -> RetrievalAgent:
+    """Build a retrieval agent from a yaml config file.
 
+    Args:
+        path: Path to the config file, whose keys are the arguments of
+            :class:`RetrievalAgent`. Dotted paths in it are resolved to the
+            objects they name.
+
+    Returns:
+        The configured retrieval agent.
+    """
     with open(Path(path).resolve(), "r") as f:
         config = yaml.safe_load(f)
 
@@ -710,13 +773,15 @@ def make_langchain_retriever(
 
 
 def make_langchain_deepagent(path: str) -> LangChainAgent:
-    """TODO
+    """Build a deep agent connector from a yaml config file.
 
     Args:
-        path (str): TODO
+        path: Path to the config file, whose keys are the arguments of
+            :class:`LangChainAgent`. Dotted paths in it are resolved to the
+            objects they name.
 
     Returns:
-        _type_: TODO
+        The configured connector.
     """
     with open(Path(path).resolve(), "r") as f:
         config = yaml.safe_load(f)

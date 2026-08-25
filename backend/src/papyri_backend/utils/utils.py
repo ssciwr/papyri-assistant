@@ -41,13 +41,15 @@ def load_type(path: Any) -> Any:
 
 
 def _process_config(value: Any):
-    """_summary_
+    """Resolve every dotted import path in a config value.
 
     Args:
-        value (Any): _description_
+        value (Any): A value read from a config file. Lists and dicts are walked
+            recursively; anything else is handed to :func:`load_type`.
 
     Returns:
-        _type_: _description_
+        Any: The value with its dotted paths replaced by the objects they name,
+        in the same shape it came in.
     """
     if isinstance(value, list):
         result = []
