@@ -1,0 +1,16 @@
+embeddings:
+  type: langchain_huggingface.HuggingFaceEmbeddings
+  kwargs:
+    model_name: Qwen/Qwen3-Embedding-8B
+    model_kwargs:
+      truncate_dim: 2000
+    encode_kwargs:
+      normalize_embeddings: True
+
+splitter_kwargs:
+  chunk_size: 1000
+  chunk_overlap: 200
+
+# This must match the collection configured for RetrievalAgent.
+store_kwargs:
+  collection_name: embeddings
