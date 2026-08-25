@@ -1,11 +1,10 @@
 """Provide a connector for deepagents agents driven by LangGraph's v3 event stream."""
 
 import json
-import os
 import re
 import uuid
-from dataclasses import dataclass
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, get_args
 
@@ -16,7 +15,6 @@ from langgraph.types import Command
 
 from .exceptions import InvalidDecision, StaleDecision
 from .utils import utils
-
 
 # Models that reason inline mark the trace as ordinary answer text instead of
 # emitting reasoning events. The tags are matched leniently because whitespace
@@ -55,7 +53,9 @@ class TurnOutput:
     reasoning: str = ""
     error: str = ""
 
-    def add_message(self, text: str, reasoning: str, tool_calls) -> None:
+    def add_message(
+        self, text: str, reasoning: str, tool_calls: list[dict[str, Any]]
+    ) -> None:
         """Collect one model message.
 
         Args:
@@ -70,7 +70,7 @@ class TurnOutput:
         for tool_call in tool_calls or []:
             args = tool_call.get("args") or {}
             body = "\n".join(f"{k}: {v}" for k, v in args.items())
-            self.answer += (
+            self.reasoning += (
                 f"\n\n````\nUsing tool: {tool_call.get('name')}\n{body}\n````\n\n"
             )
 
@@ -135,7 +135,7 @@ class LangChainAgent:
         self.thread_id = str(uuid.uuid4())
 
     def _verify_config(self, agent_kwargs: Mapping[str, Any]) -> None:
-        """Check that names in the config refer to things that exist.
+        """Check that names in the config refer to things that exist, e.g., agent tools
 
         Args:
             agent_kwargs: The keyword arguments the agent was built from.
@@ -309,9 +309,6 @@ class LangChainAgent:
                 f"Decision '{decision_type}' is not allowed for "
                 f"'{action['name']}'. Expected one of {list(allowed)}."
             )
-
-        # TODO: this hardcodes possible decisions, which are not necessarily always the same.
-
         if decision_type == "approve":
             return {"type": "approve"}
 
@@ -428,6 +425,3 @@ class LangChainAgent:
         return turn.as_answer(
             self._interrupt_view(interrupt) if interrupt is not None else None
         )
-
-
-make_langchain_deepagent = LangChainAgent.from_config
