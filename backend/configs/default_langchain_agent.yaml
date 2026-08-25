@@ -7,6 +7,10 @@ model:
     base_url: ${LLM_API_URL}
     api_key: ${LLM_API_KEY:-EMPTY}
     temperature: 0.0
+    # Qwen3.6-35B-A3B has a native 262,144-token context window. Deep Agents
+    # uses this profile to trigger summarization at 85% and retain the newest 10%.
+    profile:
+      max_input_tokens: 262144
 
 # Caller-authored system instructions, placed before the deepagents base prompt.
 system_prompt: "You are a concise, helpful assistant, expert in papyrology and expert in Postgres sql and postgres-vector. You know how to use semantic and mmr search with queries and vectors, what the best search strategies are for a given problem, and how to efficiently work with large databases of digitalized, annotated ancient documents." # TODO
@@ -15,17 +19,14 @@ tools:
   - papyri_backend.tools.sql.list_sql_tables
   - papyri_backend.tools.sql.inspect_sql
   - papyri_backend.tools.sql.query_sql
-  - papyri_backend.tools.pgvec.similarity_search
-  - papyri_backend.tools.pgvec.mmr_search
-  - papyri_backend.tools.pgvec.similarity_search_by_vec
-  - papyri_backend.tools.pgvec.mmr_search_by_vec
+  # - papyri_backend.tools.pgvec.similarity_search
+  # - papyri_backend.tools.pgvec.mmr_search
+  # - papyri_backend.tools.pgvec.similarity_search_by_vec
+  # - papyri_backend.tools.pgvec.mmr_search_by_vec
 
-# carefull here: deep_agents adds default middleware indentified by class name!
-# A middleware that takes a "model" argument is given the agent's own unless the
-# config sets one here.
+# Deep Agents installs its own model-aware SummarizationMiddleware. Do not add
+# LangChain's middleware here: a same-named entry replaces the enhanced default.
 middleware:
-  - type: langchain.agents.middleware.SummarizationMiddleware
-    kwargs: {}
   - type: langchain.agents.middleware.TodoListMiddleware
     kwargs: {}
 
