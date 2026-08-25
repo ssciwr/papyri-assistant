@@ -1,84 +1,95 @@
-import os  # for getting postgres specs
+"""Let the agent inspect and query the postgres database."""
+
+import os
+from contextlib import contextmanager
 
 import psycopg
 from langchain.tools import tool
 
 
-@tool(parse_docstring=True)
-def list_sql_tables():
+@contextmanager
+def _connection():
+    """Open a connection to the configured database.
+
+    Yields:
+        A connection to the database named by ``POSTGRES_URL``.
+
+    Raises:
+        RuntimeError: ``POSTGRES_URL`` is not set.
     """
-    List all tables in a pre-connected postgres database.
-    """
-    POSTGRES_URL = os.getenv("POSTGRES_URL")
-    if POSTGRES_URL is None:
+    url = os.getenv("POSTGRES_URL")
+    if url is None:
         raise RuntimeError("Error, database url env variable not set")
-    with psycopg.connect(POSTGRES_URL) as conn:
-        try:
-            rows = conn.execute(
-                """
-                SELECT table_name
-                FROM information_schema.tables
-                WHERE table_schema = 'public'
-                  AND table_type = 'BASE TABLE'
-                ORDER BY table_name
-                """
-            ).fetchall()
-
-            schema_text = "\n".join(table_name for (table_name,) in rows)
-
-            return schema_text
-        except Exception as e:
-            response = f"Error, the query attempt failed with error: {e}"
-            return [{"message": response}]
+    with psycopg.connect(url) as connection:
+        yield connection
 
 
-@tool(parse_docstring=True)
-def inspect_sql():
+def _rows(query: str) -> list[tuple] | str:
+    """Run a read query and return its rows.
+
+    Args:
+        query: The sql to run.
+
+    Returns:
+        The rows, or the error text if the query failed. The error is returned
+        rather than raised so that the model can read it and try again.
     """
-    Get all sql tables and their schema for inspection and orientation.
-    Returns a string that contains 'table.column: datatype' for each table and column therein.
-    Tool has no input, and outputs a single formatted string.
-    """
-    POSTGRES_URL = os.getenv("POSTGRES_URL")
-    if POSTGRES_URL is None:
-        raise RuntimeError("Error, database url env variable not set")
-    SCHEMA_SQL = """
-    SELECT table_name, column_name, data_type
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-    ORDER BY table_name, ordinal_position
-    """
-    with psycopg.connect(POSTGRES_URL) as conn:
-        try:
-            rows = conn.execute(SCHEMA_SQL).fetchall()
-
-            schema_text = "\n".join(
-                f"{table}.{column}: {datatype}" for table, column, datatype in rows
-            )
-
-            return schema_text
-        except Exception as e:
-            response = f"Error, the query attempt failed with error: {e}"
-            return [{"message": response}]
+    try:
+        with _connection() as connection:
+            return connection.execute(query).fetchall()
+    except Exception as e:
+        return f"Error, the query attempt failed with error: {e}"
 
 
 @tool(parse_docstring=True)
-def query_sql(query) -> list:
-    """Query an already connected sql database and return the result or the error message.
-    Connect to a database defined via POSTGRES_URL POSTGRES_USER POSTGRES_PW env variables.
-    first if not already there.
+def list_sql_tables() -> str:
+    """List all tables in a pre-connected postgres database.
+
+    Returns:
+        One table name per line.
     """
+    rows = _rows(
+        """
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_type = 'BASE TABLE'
+        ORDER BY table_name
+        """
+    )
+    if isinstance(rows, str):
+        return rows
+    return "\n".join(table_name for (table_name,) in rows)
 
-    POSTGRES_URL = os.getenv("POSTGRES_URL")
-    if POSTGRES_URL is None:
-        raise RuntimeError("Error, database url env variable not set")
-    query = query.strip()
 
-    response = "nothing"
-    with psycopg.connect(POSTGRES_URL) as db, db.cursor() as cursor:
-        try:
-            result = cursor.execute(query).fetchall()
-            return result
-        except Exception as e:
-            response = f"Error, the query attempt failed with error: {e}"
-            return [{"message": response}]
+@tool(parse_docstring=True)
+def inspect_sql() -> str:
+    """Get all sql tables and their schema for inspection and orientation.
+
+    Returns:
+        One ``table.column: datatype`` line per column, over every table.
+    """
+    rows = _rows(
+        """
+        SELECT table_name, column_name, data_type
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+        ORDER BY table_name, ordinal_position
+        """
+    )
+    if isinstance(rows, str):
+        return rows
+    return "\n".join(f"{table}.{column}: {kind}" for table, column, kind in rows)
+
+
+@tool(parse_docstring=True)
+def query_sql(query: str) -> list[tuple] | str:
+    """Query the connected sql database and return the result.
+
+    Args:
+        query: The sql statement to run.
+
+    Returns:
+        The rows the query returned, or the error text if it failed.
+    """
+    return _rows(query.strip())

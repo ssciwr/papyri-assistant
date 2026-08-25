@@ -4,31 +4,16 @@ import json
 import os
 import re
 import uuid
+from dataclasses import dataclass
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
-import yaml
 from deepagents import create_deep_agent
-from deepagents.backends import CompositeBackend
-from langchain.agents.middleware import (
-    LLMToolSelectorMiddleware,
-    SummarizationMiddleware,
-)
+from deepagents.middleware.filesystem import FilesystemOperation
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
-from langchain_core.documents import Document
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_postgres import PGVector
-from sqlalchemy import create_engine
-from sqlalchemy.engine import make_url
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from typing import Any
-from pathlib import Path
-import yaml
 
-
-from .base import BaseAgent
 from .exceptions import InvalidDecision, StaleDecision
 from .utils import utils
 
@@ -40,365 +25,145 @@ _THINK_OPEN = re.compile(r"<\s*think\s*>", re.IGNORECASE)
 _THINK_CLOSE = re.compile(r"</\s*think\s*>", re.IGNORECASE)
 
 
-class RetrievalAgent:
-    """Answer questions by searching a vector store, without running a model."""
+def split_think(text: str) -> tuple[str, str]:
+    """Separate an inline reasoning trace from the answer text.
 
-    def __init__(
-        self,
-        embeddingmodel: str,
-        embeddings_type: str = "langchain_huggingface.HuggingFaceEmbeddings",
-        store_kwargs: dict[str, Any] | None = None,
-        embeddings_kwargs: dict[str, Any] | None = None,
-        similarity_search_kwargs: dict[str, Any] | None = None,
-        mmr_search_kwargs: dict[str, Any] | None = None,
-    ):
-        """Build the embeddings and the vector store the searches run against.
+    Args:
+        text: One model message's text.
 
-        The database connection is read from the ``POSTGRES_URL`` environment
-        variable.
+    Returns:
+        The reasoning trace and the answer. The trace is empty when the message
+        carries none.
+    """
+    # The trace always comes first, so the closing tag is the single point at
+    # which the message switches from reasoning to answer.
+    close_tag = _THINK_CLOSE.search(text)
+    if close_tag is None:
+        return "", text
+
+    # Deployments whose chat template pre-fills the opening tag start the trace
+    # without one, so its absence is not a reason to skip the split.
+    reasoning = _THINK_OPEN.sub("", text[: close_tag.start()], 1)
+    return reasoning, text[close_tag.end() :]
+
+
+@dataclass
+class TurnOutput:
+    """What one turn produced, as the client will read it."""
+
+    answer: str = ""
+    reasoning: str = ""
+    error: str = ""
+
+    def add_message(self, text: str, reasoning: str, tool_calls) -> None:
+        """Collect one model message.
 
         Args:
-            embeddingmodel: Name of the embedding model, passed to the
-                embeddings class as ``model_name``.
-            embeddings_type: Dotted path of the embeddings class to build, or
-                the class itself.
-            store_kwargs: Keyword arguments for ``PGVector``, such as
-                ``collection_name``. ``connection`` is not accepted here.
-            embeddings_kwargs: Further keyword arguments for the embeddings
-                class, such as ``encode_kwargs``.
-            similarity_search_kwargs: Keyword arguments applied to every
-                similarity search, such as the number of results ``k``.
-            mmr_search_kwargs: Keyword arguments applied to every maximal
-                marginal relevance search, such as ``k``.
-
-        Raises:
-            ValueError: ``POSTGRES_URL`` is unset, or ``store_kwargs`` carries a
-                ``connection`` of its own.
+            text: The message's answer text, which may carry a reasoning trace.
+            reasoning: The message's separately reported reasoning trace.
+            tool_calls: The calls the model made in this message.
         """
-        ps_conn = os.getenv("POSTGRES_URL")
+        inline_reasoning, answer = split_think(text)
+        self.reasoning += reasoning + inline_reasoning
+        self.answer += answer
 
-        if ps_conn is None:
-            raise ValueError(
-                "Error, no connection to postgres database given. Either give 'ps_connection' or set the 'POSTGRES_URL' environment variable. "
+        for tool_call in tool_calls or []:
+            args = tool_call.get("args") or {}
+            body = "\n".join(f"{k}: {v}" for k, v in args.items())
+            self.answer += (
+                f"\n\n````\nUsing tool: {tool_call.get('name')}\n{body}\n````\n\n"
             )
 
-        embed_tp = utils.load_type(embeddings_type)
-        self.embeddings = embed_tp(
-            model_name=embeddingmodel, **(embeddings_kwargs or {})
-        )
-
-        if store_kwargs is not None and "connection" in store_kwargs:
-            raise ValueError(
-                "connection is not allowed in store kwargs. use the env variable POSTGRES_URL to set the database connection"
-            )
-        # SQLAlchemy resolves a bare ``postgresql://`` URL to psycopg2, which is
-        # not installed. Naming psycopg3 on the engine keeps that choice local to
-        # this store, so POSTGRES_URL stays the one plain URL the sql tools read.
-        engine = create_engine(make_url(ps_conn).set(drivername="postgresql+psycopg"))
-
-        self.store = PGVector(
-            embeddings=self.embeddings,
-            connection=engine,
-            **(store_kwargs or {}),
-        )
-
-        self.similarity_search_kwargs = {}
-        for k, v in (similarity_search_kwargs or {}).items():
-            self.similarity_search_kwargs[k] = utils._process_config(v)
-
-        self.mmr_search_kwargs = {}
-        for k, v in (mmr_search_kwargs or {}).items():
-            self.mmr_search_kwargs[k] = utils._process_config(v)
-
-    def similarity_search(self, query: str) -> list[Document]:
-        """Find the documents closest to a query.
+    def as_answer(self, interrupt: dict[str, Any] | None) -> dict[str, Any]:
+        """Render the turn as the chat response.
 
         Args:
-            query: The text to search for. It is embedded before the search.
+            interrupt: The interrupt the run is now paused on, if any.
 
         Returns:
-            The matching documents, ranked by similarity.
+            The turn's ``text``, ``reasoning`` and ``interrupt``.
         """
-        return self.store.similarity_search(query, **self.similarity_search_kwargs)
-
-    def mmr_search(self, query: str) -> list[Document]:
-        """Find documents for a query, trading similarity for variety.
-
-        Args:
-            query: The text to search for. It is embedded before the search.
-
-        Returns:
-            The matching documents, ranked by maximal marginal relevance.
-        """
-        return self.store.max_marginal_relevance_search(query, **self.mmr_search_kwargs)
-
-    def similarity_search_by_vec(self, vec: list[float]) -> list[Document]:
-        """Find the documents closest to an already embedded query.
-
-        Args:
-            vec: The query's embedding, in the embedding model's dimension.
-
-        Returns:
-            The matching documents, ranked by similarity.
-        """
-        return self.store.similarity_search_by_vector(
-            vec, **self.similarity_search_kwargs
-        )
-
-    def mmr_search_by_vec(self, vec: list[float]) -> list[Document]:
-        """Find documents for an already embedded query, favouring variety.
-
-        Args:
-            vec: The query's embedding, in the embedding model's dimension.
-
-        Returns:
-            The matching documents, ranked by maximal marginal relevance.
-        """
-        return self.store.max_marginal_relevance_search_by_vector(
-            vec, **self.mmr_search_kwargs
-        )
-
-    @staticmethod
-    def _format_documents(documents: list[Document]) -> str:
-        """Render retrieved documents as the text of a chat answer.
-
-        Args:
-            documents: The documents a search returned, in the order the store
-                ranked them.
-
-        Returns:
-            One markdown block per document, carrying its rank, whatever
-            identifies its source in the metadata, and its content. An empty
-            result is reported as such, because a chat answer cannot be empty.
-        """
-        if not documents:
-            return "No matching passages were found."
-
-        blocks = []
-        for rank, document in enumerate(documents, start=1):
-            metadata = document.metadata or {}
-            source = metadata.get("source") or metadata.get("id") or "unknown source"
-            blocks.append(f"**{rank}. {source}**\n\n{document.page_content.strip()}")
-
-        return "\n\n---\n\n".join(blocks)
-
-    def run_single_turn(self, message) -> dict[str, Any]:
-        """Answer one incoming chat message with a plain retrieval.
-
-        No model runs here, so the turn has neither a reasoning trace nor an
-        interrupt to report; both fields are still present, because the client
-        reads the same answer shape whichever mode produced it.
-
-        Args:
-            message: An incoming chat message, whose first content part carries
-                the user's text.
-
-        Returns:
-            The retrieved passages as the answer's ``text``, an empty
-            ``reasoning`` trace and no ``interrupt``. A failed search travels as
-            chat output in place of the answer, as it does for the deep agent.
-        """
-        query = message["content"][0]["text"]
-
-        try:
-            documents = self.similarity_search(query)
-        except Exception as exc:
-            text = f"The retrieval failed: {exc}"
-        else:
-            text = self._format_documents(documents)
-
-        return {"text": text, "reasoning": "", "interrupt": None}
+        # A run that failed leaves no usable answer, so the error takes its
+        # place rather than trailing whatever was emitted before the failure.
+        return {
+            "text": self.error.strip() or self.answer.strip(),
+            "reasoning": self.reasoning.strip(),
+            "interrupt": interrupt,
+        }
 
 
-class LangChainAgent(BaseAgent):
+class LangChainAgent:
     """Connect to a deepagents agent and stream its events."""
 
-    def __init__(
-        self,
-        kwargs: Mapping[str, Any] | None = None,
-    ):
+    @classmethod
+    def from_config(cls, path: str | Path) -> "LangChainAgent":
+        """Build an agent from a yaml config file.
+
+        Args:
+            path: Path to the config file, whose keys are the arguments below.
+
+        Returns:
+            The configured agent.
+        """
+        return cls(**utils.load_config(path))
+
+    def __init__(self, **agent_kwargs: Any):
         """Build a deep agent.
 
         Args:
-            kwargs: Keyword arguments for ``create_deep_agent``, such as
+            agent_kwargs: Keyword arguments for ``create_deep_agent``, such as
                 ``model``, ``tools``, ``system_prompt`` and ``interrupt_on``.
-                ``middleware`` and ``permissions`` are given as
-                ``{"type": ..., "kwargs": {...}}`` entries and instantiated here.
-                A ``checkpointer`` is added when none is supplied, because
-                interrupts cannot be resumed without one.
+                Nested ``{"type": ..., "kwargs": {...}}`` entries are
+                constructed. A ``checkpointer`` is added when none is supplied.
         """
-
-        agent_kwargs = dict(kwargs or {})
         agent_kwargs.setdefault(
             "checkpointer", InMemorySaver()
         )  # TODO: make the checkpointer configurable
 
-        model = agent_kwargs.get("model")
-        if isinstance(model, Mapping):
-            model_kwargs = dict(model.get("kwargs") or {})
-            model_kwargs.setdefault("model", os.getenv("LLM_MODEL"))
-            model_kwargs.setdefault("base_url", os.getenv("LLM_API_URL"))
-            model_kwargs.setdefault("api_key", os.getenv("LLM_API_KEY", "EMPTY"))
-            agent_kwargs["model"] = model["type"](**model_kwargs)
-
-        agent_kwargs["middleware"] = [
-            self._build_middleware(middleware_def, agent_kwargs.get("model"))
-            for middleware_def in agent_kwargs.get("middleware") or []
-        ]
-
-        if "permissions" in agent_kwargs:
-            agent_kwargs["permissions"] = [
-                self._build_permission(permission_def)
-                for permission_def in agent_kwargs["permissions"] or []
-            ]
-
-        if "backend" in agent_kwargs:
-            backend = self._build_backend(agent_kwargs["backend"])
-            agent_kwargs["backend"] = backend
-
-        super().__init__(**agent_kwargs)
+        # The model is built first so that it can be offered to the middlewares
+        # that run a model of their own. Building everything in one pass would
+        # instead offer the model to its own constructor.
+        model = utils.build(agent_kwargs.get("model"))
+        agent_kwargs = {
+            key: value if key == "model" else utils.build(value, {"model": model})
+            for key, value in agent_kwargs.items()
+        }
+        agent_kwargs["model"] = model
 
         self.agent = create_deep_agent(**agent_kwargs)
+        self._verify_config(agent_kwargs)
         self.thread_id = str(uuid.uuid4())
-        self._pending: Mapping[str, Any] | Command | None = None
-        self._run: Any | None = None
 
-        self._reset_buffers()
-
-    def _reset_buffers(self):
-        """Clear the buffers a turn's output is collected into."""
-        self.full_answer = ""
-        self.full_reasoning = ""
-        self.full_error = ""
-
-    def _collect_answer(self, message: str):
-        """Collect streamed answer text, splitting off an inline reasoning trace.
+    def _verify_config(self, agent_kwargs: Mapping[str, Any]) -> None:
+        """Check that names in the config refer to things that exist.
 
         Args:
-            message: The next chunk of streamed answer text.
+            agent_kwargs: The keyword arguments the agent was built from.
+
+        Raises:
+            ValueError: A tool or operation named in the config does not exist.
         """
+        # A misnamed key here is silent: it matches nothing, so it neither fires
+        # nor errors, and the guard the config asks for is simply absent.
+        tool_names = set(self.agent.nodes["tools"].bound.tools_by_name)
+        unknown_tools = sorted(set(agent_kwargs.get("interrupt_on") or {}) - tool_names)
+        if unknown_tools:
+            raise ValueError(
+                f"interrupt_on names tools the agent does not have: {unknown_tools}. "
+                f"Available tools: {sorted(tool_names)}"
+            )
 
-        # The trace always comes first, so ``</think>`` is the single point at
-        # which the stream switches from reasoning to answer. Text accumulates in
-        # the answer buffer until then, which leaves a model that never reasons
-        # inline with nothing to do. The tag is looked for in the accumulated
-        # buffer rather than in the message, because a stream chunk can end in the
-        # middle of it.
-
-        self.full_answer += message
-
-        close_tag = _THINK_CLOSE.search(self.full_answer)
-        if close_tag is None:
-            return
-
-        # The opening tag is dropped when the model sent one; deployments whose
-        # chat template pre-fills it start the trace without one.
-        reasoning_part = _THINK_OPEN.sub("", self.full_answer[: close_tag.start()], 1)
-        self.full_reasoning += reasoning_part
-        self.full_answer = self.full_answer[close_tag.end() :]
-
-    def _collect_reasoning(self, message: str):
-        """Collect a chunk of the model's reasoning trace.
-
-        Args:
-            message: The next chunk of streamed reasoning text.
-        """
-        self.full_reasoning += message
-
-    def _collect_error(self, message: str):
-        """Collect an error that takes the place of the turn's answer.
-
-        Args:
-            message: The error text to report back to the client.
-        """
-        self.full_error += message
-
-    def _collect_tool_call(self, tool_call: Mapping[str, Any]):
-        """Render one tool call into the answer buffer.
-
-        Args:
-            tool_call: The call the model made, carrying its ``name`` and ``args``.
-        """
-        name = tool_call.get("name")
-        args = tool_call.get("args") or {}
-        body = "\n".join(f"{k}: {v}" for k, v in args.items())
-        self._collect_answer(f"\n\n````\nUsing tool: {name}\n{body}\n````\n\n")
-
-    @staticmethod
-    def _build_middleware(middleware_def: Mapping[str, Any], model: Any) -> Any:
-        """Build one middleware from its config entry.
-
-        Args:
-            middleware_def: A ``{"type": ..., "kwargs": {...}}`` mapping, where
-                the type is a middleware class such as
-                ``langchain.agents.middleware.TodoListMiddleware``.
-            model: The agent's chat model, handed to the middlewares that run a
-                model of their own instead of the agent's.
-
-        Returns:
-            The instantiated middleware, ready to hand to ``create_deep_agent``.
-        """
-        middleware_type = utils.load_type(middleware_def["type"])
-        middleware_kwargs = dict(middleware_def.get("kwargs") or {})
-
-        # some middleware needs a model being passed explicitly
-        if middleware_type in (SummarizationMiddleware, LLMToolSelectorMiddleware):
-            middleware_kwargs.setdefault("model", model)
-
-        return middleware_type(**middleware_kwargs)
-
-    @staticmethod
-    def _build_permission(permission_def: Mapping[str, Any]) -> Any:
-        """Build one filesystem access rule from its config entry.
-
-        Args:
-            permission_def: A ``{"type": ..., "kwargs": {...}}`` mapping, where
-                the type is a permission class such as
-                ``deepagents.FilesystemPermission``.
-
-        Returns:
-            The instantiated rule, ready to hand to ``create_deep_agent``.
-        """
-        permission_type = utils.load_type(permission_def["type"])
-        permission_kwargs = dict(permission_def.get("kwargs") or {})
-
-        # FilesystemPermission insists on absolute paths and rejects "~", so the
-        # shell-style shorthands a config is written with are resolved here.
-        if "paths" in permission_kwargs:
-            permission_kwargs["paths"] = [
-                os.path.expanduser(os.path.expandvars(path))
-                for path in permission_kwargs["paths"]
-            ]
-
-        return permission_type(**permission_kwargs)
-
-    @staticmethod
-    def _build_backend(backend_specs: Mapping[str, Mapping[str, Any]]) -> Any:
-        """Build the agent's file backend from its config entry.
-
-        Args:
-            backend_specs: A mapping carrying ``default_typename`` and optional
-                ``default_kwargs`` for the fallback backend, plus ``routes``,
-                which maps a directory to a ``{"typename": ..., "kwargs": {...}}``
-                entry for the backend serving it.
-
-        Returns:
-            A ``CompositeBackend`` routing each configured directory to its own
-            backend and everything else to the default one.
-        """
-        processed_backend_specs = {}
-        for k, v in backend_specs.items():
-            processed_backend_specs[k] = utils._process_config(v)
-
-        default = processed_backend_specs["default_typename"](
-            **processed_backend_specs.get("default_kwargs", {})
-        )
-
-        routes = {}
-        for route, backend_def in processed_backend_specs["routes"].items():
-            routes[route] = backend_def["typename"](**backend_def.get("kwargs", {}))
-
-        return CompositeBackend(default=default, routes=routes)
+        operations = set(get_args(FilesystemOperation))
+        for permission in agent_kwargs.get("permissions") or []:
+            unknown_ops = sorted(
+                set(getattr(permission, "operations", ())) - operations
+            )
+            if unknown_ops:
+                raise ValueError(
+                    f"permission names operations that do not exist: {unknown_ops}. "
+                    f"Available operations: {sorted(operations)}. Note these are "
+                    f"filesystem operations, not tool names."
+                )
 
     @property
     def _config(
@@ -411,7 +176,7 @@ class LangChainAgent(BaseAgent):
         """
         return {"configurable": {"thread_id": self.thread_id}}
 
-    def _process_input_message(self, user_input: str):
+    def _input_payload(self, user_input: str):
         """Convert user input into an input payload.
 
         Args:
@@ -427,50 +192,6 @@ class LangChainAgent(BaseAgent):
             return None  # unsupported wrapper command
 
         return {"messages": [{"role": "user", "content": user_input}]}
-
-    def send_message(self, input: str):
-        """Stage user input for the next run.
-
-        The payload is held until ``get_answers`` consumes it, because a v3
-        run is driven by the caller's iteration rather than by writing to a
-        process.
-
-        Args:
-            input: Raw user input to convert into a graph input payload.
-        """
-        to_send = self._process_input_message(input)
-
-        if to_send is None:
-            self._collect_error(f"{input} is not a processable input")
-        else:
-            self._pending = to_send
-
-    def get_answers(self):
-        """Start a run for the staged payload and yield its messages.
-
-        Iterating the yielded streams is what drives the run forward.
-
-        Yields:
-            One ``ChatModelStream`` per model call in the run.
-        """
-        if self._pending is None:
-            return
-
-        # This takes care of the interleaving of steering messages
-        # TODO: looks weird. not sure this is  necessary
-        pending, self._pending = (
-            self._pending,
-            None,
-        )
-
-        # TODO: I am not too happy that this here sends requests. I think this architecture is way too complicated for what I am trying to do
-        self._run = self.agent.stream_events(
-            pending,
-            config=self._config,
-            version="v3",  # TODO: is this necessary?
-        )
-
-        yield from self._run.messages  # answer buffer
 
     def _pending_interrupt(self):
         """Return the interrupt the run is paused on, if any.
@@ -511,8 +232,8 @@ class LangChainAgent(BaseAgent):
             ],
         }
 
-    def _process_interrupt(self, payload: Mapping[str, Any]):
-        """Answer the pending interrupt and stage the resume for the next run.
+    def _resume_command(self, payload: Mapping[str, Any]) -> Command:
+        """Turn a decision reply into the command that resumes the paused run.
 
         The graph raises ``ValueError`` for a decision count that does not match
         the paused actions, or for a type the action does not allow. Both are
@@ -522,6 +243,9 @@ class LangChainAgent(BaseAgent):
         Args:
             payload: A decision reply, carrying ``interrupt_id`` and one entry in
                 ``decisions`` per paused action, in the same order.
+
+        Returns:
+            The command that resumes the run with those decisions.
 
         Raises:
             StaleDecision: Nothing is paused, or the reply names another interrupt.
@@ -552,7 +276,7 @@ class LangChainAgent(BaseAgent):
             for reply, action, config in zip(replies, action_requests, review_configs)
         ]
 
-        self._pending = Command(resume={"decisions": decisions})
+        return Command(resume={"decisions": decisions})
 
     @staticmethod
     def _build_decision(
@@ -613,48 +337,21 @@ class LangChainAgent(BaseAgent):
             raise InvalidDecision("Responding on behalf of a tool needs a message.")
         return {"type": "respond", "message": message}
 
-    def _process_events_message(self, message):
-        """Collect one model message as it streams in.
-
-        Raw protocol events are iterated rather than the ``text`` and
-        ``reasoning`` projections, because both projections only finish at the
-        end of the message; draining either one would wait for the whole message
-        instead of collecting it as it arrives.
+    def _drive(self, payload: Any, turn: TurnOutput) -> None:
+        """Run the graph until it finishes or pauses for a decision.
 
         Args:
-            message: A ``ChatModelStream`` for a single model call.
+            payload: The graph input, or a resume command.
+            turn: Collects what the run produces.
         """
-        for event in message:
-            if event.get("event") != "content-block-delta":
-                continue
-
-            delta = event.get("delta") or {}
-
-            if delta.get("type") == "text-delta":
-                self._collect_answer(delta.get("text", ""))
-            elif delta.get("type") == "reasoning-delta":
-                self._collect_reasoning(delta.get("reasoning", ""))
-
-        # TODO: what does this do? really?
-        for tool_call in message.tool_calls.get() or []:
-            self._collect_tool_call(tool_call)
-
-    def process_events(self):
-        """Drive the staged run until it finishes or pauses for a decision.
-
-        A paused run is left paused: the checkpointer holds it until a decision
-        arrives on a later turn. Only the prompt is collected here; the decisions
-        themselves are not, because a client that answers the interrupt reads
-        them from the response's ``interrupt`` field, which ``_interrupt_view``
-        builds from the checkpointer rather than from buffered output.
-        """
-        # implements the control flow for event processing.
-        while self._pending is not None:
-            for message in self.get_answers():
-                self._process_events_message(message)
-
-            if self._run.interrupted:
-                self._collect_answer("Please decide how you want to proceed:\n")
+        # Draining the messages is what drives the run forward. A pause ends
+        # the drain and is left in place: the checkpointer holds it until a
+        # decision arrives on a later turn.
+        run = self.agent.stream_events(payload, config=self._config, version="v3")
+        for message in run.messages:
+            turn.add_message(
+                str(message.text), str(message.reasoning), message.tool_calls.get()
+            )
 
     @staticmethod
     def _as_decision(text: str) -> dict[str, Any] | None:
@@ -705,88 +402,32 @@ class LangChainAgent(BaseAgent):
         """
         text = message["content"][0]["text"]
         decision = self._as_decision(text)
+        turn = TurnOutput()
 
-        # Raised before the run is touched, so a refused decision leaves the
-        # graph paused exactly as it was.
         if decision is not None:
-            self._process_interrupt(decision)
+            # Raised before the run is touched, so a refused decision leaves
+            # the graph paused exactly as it was.
+            payload = self._resume_command(decision)
         else:
-            self.send_message(text)
+            payload = self._input_payload(text)
+            if payload is None:
+                turn.error = f"{text} is not a processable input"
 
-        try:
-            self.process_events()
-        except Exception as exc:
-            self._pending = None
-            self._collect_error(f"The agent run failed: {exc}")
-
-        # Run failures deliberately travel as chat output during local
-        # development. Prefer them over incomplete text emitted before the
-        # failure (for example, a tool-call announcement).
-        answer_text = self.full_error.strip() or self.full_answer.strip()
-        reasoning_text = self.full_reasoning.strip()
+        if not turn.error:
+            try:
+                self._drive(payload, turn)
+            except Exception as exc:
+                # Run failures deliberately travel as chat output during local
+                # development.
+                turn.error = f"The agent run failed: {exc}"
 
         interrupt = self._pending_interrupt()
+        if interrupt is not None:
+            turn.answer += "Please decide how you want to proceed:\n"
 
-        answer = {
-            "text": answer_text,
-            "reasoning": reasoning_text,
-            "interrupt": self._interrupt_view(interrupt) if interrupt else None,
-        }
-        self._reset_buffers()
-        return answer
-
-    def teardown(self) -> int:
-        """Stop a run that was left partially drained.
-
-        Returns:
-            Zero. The agent runs in this process, so there is no exit code to
-            report.
-        """
-        if self._run is not None:
-            self._run.abort()
-            self._run = None
-
-        return 0
+        return turn.as_answer(
+            self._interrupt_view(interrupt) if interrupt is not None else None
+        )
 
 
-def make_langchain_retriever(
-    path: str,
-) -> RetrievalAgent:
-    """Build a retrieval agent from a yaml config file.
-
-    Args:
-        path: Path to the config file, whose keys are the arguments of
-            :class:`RetrievalAgent`. Dotted paths in it are resolved to the
-            objects they name.
-
-    Returns:
-        The configured retrieval agent.
-    """
-    with open(Path(path).resolve(), "r") as f:
-        config = yaml.safe_load(f)
-
-    cfg = {}
-    for k, v in config.items():
-        cfg[k] = utils._process_config(v)
-    retrieval_agent = RetrievalAgent(**cfg)
-    return retrieval_agent
-
-
-def make_langchain_deepagent(path: str) -> LangChainAgent:
-    """Build a deep agent connector from a yaml config file.
-
-    Args:
-        path: Path to the config file, whose keys are the arguments of
-            :class:`LangChainAgent`. Dotted paths in it are resolved to the
-            objects they name.
-
-    Returns:
-        The configured connector.
-    """
-    with open(Path(path).resolve(), "r") as f:
-        config = yaml.safe_load(f)
-
-    cfg = {}
-    for k, v in config.items():
-        cfg[k] = utils._process_config(v)
-    return LangChainAgent(**cfg)
+make_langchain_deepagent = LangChainAgent.from_config

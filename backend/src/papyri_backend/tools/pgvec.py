@@ -1,14 +1,6 @@
 from langchain.tools import tool
 
-
-def _retriever():
-    from .. import (
-        chat,
-    )  # deferred: chat -> langchain_agent -> tools is circular at import time
-
-    if chat.RETRIEVER is None:
-        raise ValueError("global RETRIEVER object doesn't exist")
-    return chat.RETRIEVER
+from ..session import retriever
 
 
 @tool(parse_docstring=True)
@@ -27,7 +19,7 @@ def similarity_search(query: str):
         The matching documents, each with its page content and metadata. How
         many come back is fixed by the retriever's configuration.
     """
-    return _retriever().similarity_search(query)
+    return retriever().similarity_search(query)
 
 
 @tool(parse_docstring=True)
@@ -47,7 +39,7 @@ def mmr_search(query: str):
         The selected documents, each with its page content and metadata. How
         many come back is fixed by the retriever's configuration.
     """
-    return _retriever().mmr_search(query)
+    return retriever().mmr_search(query)
 
 
 @tool(parse_docstring=True)
@@ -66,7 +58,7 @@ def similarity_search_by_vec(vec: list[float]):
         The matching documents, each with its page content and metadata. How
         many come back is fixed by the retriever's configuration.
     """
-    return _retriever().similarity_search_by_vec(vec)
+    return retriever().similarity_search_by_vec(vec)
 
 
 @tool(parse_docstring=True)
@@ -85,4 +77,4 @@ def mmr_search_by_vec(vec: list[float]):
         The selected documents, each with its page content and metadata. How
         many come back is fixed by the retriever's configuration.
     """
-    return _retriever().mmr_search_by_vec(vec)
+    return retriever().mmr_search_by_vec(vec)
