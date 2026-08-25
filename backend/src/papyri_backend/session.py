@@ -5,6 +5,9 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+import psycopg
 
 from .langchain_agent import LangChainAgent
 from .retrieval import RetrievalAgent
@@ -17,10 +20,11 @@ _CURRENT: "Session | None" = None
 
 @dataclass(frozen=True)
 class Session:
-    """One agent and the retriever backing its search tools."""
+    """One agent, the retriever backing its search tools, and their database."""
 
     agent: LangChainAgent
     retriever: RetrievalAgent
+    connection: psycopg.Connection[tuple[Any, ...]]
 
 
 def _config_path(variable: str, default: str) -> Path:
@@ -39,14 +43,31 @@ def _config_path(variable: str, default: str) -> Path:
     return Path(configured).expanduser() if configured else _ROOT / default
 
 
+def _build_connection() -> psycopg.Connection[tuple[Any, ...]]:
+    """Connect to the database named by the ``POSTGRES_URL`` environment variable.
+
+    Returns:
+        The connection the sql tools run their queries on.
+
+    Raises:
+        RuntimeError: ``POSTGRES_URL`` is not set.
+    """
+    url = os.getenv("POSTGRES_URL")
+    if url is None:
+        raise RuntimeError("Error, database url env variable not set")
+    return psycopg.connect(url)
+
+
 def start() -> Session:
-    """Build a new agent and retriever, replacing any current ones.
+    """Build a new agent, retriever and database connection, replacing any
+    current ones.
 
     Returns:
         The new session.
 
     Raises:
-        RuntimeError: The agent or the retriever could not be built.
+        RuntimeError: The agent, the retriever or the connection could not be
+            built.
     """
     global _CURRENT
 
@@ -62,6 +83,7 @@ def start() -> Session:
                     "RETRIEVER_CONFIG", "configs/default_langchain_retriever.yaml"
                 )
             ),
+            connection=_build_connection(),
         )
     except Exception as exc:
         raise RuntimeError(f"Error during agent construction: {exc}") from exc
@@ -91,3 +113,12 @@ def retriever() -> RetrievalAgent:
         The current session's retriever.
     """
     return current().retriever
+
+
+def connection() -> psycopg.Connection[tuple[Any, ...]]:
+    """Return the connection the sql tools run their queries on.
+
+    Returns:
+        The current session's database connection.
+    """
+    return current().connection

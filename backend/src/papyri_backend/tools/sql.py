@@ -1,27 +1,8 @@
 """Let the agent inspect and query the postgres database."""
 
-import os
-from contextlib import contextmanager
-
-import psycopg
 from langchain.tools import tool
 
-
-@contextmanager
-def _connection():
-    """Open a connection to the configured database.
-
-    Yields:
-        A connection to the database named by ``POSTGRES_URL``.
-
-    Raises:
-        RuntimeError: ``POSTGRES_URL`` is not set.
-    """
-    url = os.getenv("POSTGRES_URL")
-    if url is None:
-        raise RuntimeError("Error, database url env variable not set")
-    with psycopg.connect(url) as connection:
-        yield connection
+from ..session import connection
 
 
 def _rows(query: str) -> list[tuple] | str:
@@ -35,8 +16,15 @@ def _rows(query: str) -> list[tuple] | str:
         rather than raised so that the model can read it and try again.
     """
     try:
-        with _connection() as connection:
-            return connection.execute(query).fetchall()
+        session_connection = connection()
+        try:
+            return session_connection.execute(query).fetchall()
+        finally:
+            # Nothing here writes, so every query is ended by rolling it back.
+            # That is also what clears the aborted state a failed query leaves
+            # behind, which would otherwise block every later query on this
+            # connection.
+            session_connection.rollback()
     except Exception as e:
         return f"Error, the query attempt failed with error: {e}"
 
