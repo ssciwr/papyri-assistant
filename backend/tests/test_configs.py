@@ -19,6 +19,7 @@ from papyri_backend.utils import utils
 
 CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 AGENT_CONFIG = CONFIGS / "default_langchain_agent.yaml"
+EMBEDDER_CONFIG = CONFIGS / "default_langchain_embedder.yaml"
 RETRIEVER_CONFIG = CONFIGS / "default_langchain_retriever.yaml"
 
 
@@ -31,7 +32,9 @@ def llm_env(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(
-    "path", [AGENT_CONFIG, RETRIEVER_CONFIG], ids=["agent", "retriever"]
+    "path",
+    [AGENT_CONFIG, EMBEDDER_CONFIG, RETRIEVER_CONFIG],
+    ids=["agent", "embedder", "retriever"],
 )
 def test_config_file_exists(path: Path) -> None:
     assert path.is_file()
@@ -44,6 +47,14 @@ def test_agent_config_loads(llm_env) -> None:
 
     assert config["system_prompt"].startswith("You are a concise")
     assert config["model"]["kwargs"]["model"] == "test-model"
+
+
+def test_embedder_config_loads() -> None:
+    config = utils.load_config(EMBEDDER_CONFIG)
+
+    assert callable(config["embeddings"]["type"])
+    assert config["embeddings"]["kwargs"]["model_kwargs"] == {"truncate_dim": 2000}
+    assert config["store_kwargs"] == {"collection_name": "embeddings"}
 
 
 def test_retriever_config_loads() -> None:
