@@ -8,15 +8,22 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy import create_engine
 from sqlalchemy import text as sql_text
 from sqlalchemy.engine import make_url
-
+from tqdm import tqdm
 from .utils import utils
 
 
-class PapyriEmbeddings:
-    """Create and store embeddings for Scrapyrus documents.
+class LangChainEmbeddings:
+    """Create and store vector embeddings for Scrapyrus documents.
 
-    The class uses a configured embedding model, splits source text into chunks,
-    and stores the resulting embeddings in PostgreSQL through PGVector.
+    This service splits source text into chunks, embeds each chunk with the
+    configured model, and stores the resulting vectors in PostgreSQL through
+    PGVector.
+
+    Attributes:
+        embeddings: Model used to produce vector embeddings.
+        splitter: Text splitter used to create embeddable chunks.
+        engine: SQLAlchemy engine connected to the source database.
+        store: PGVector store that receives the embedded chunks.
     """
 
     def __init__(
@@ -25,15 +32,16 @@ class PapyriEmbeddings:
         splitter_kwargs: dict[str, Any] | None = None,
         store_kwargs: dict[str, Any] | None = None,
     ):
-        """Initialize the text splitter and vector store.
+        """Initialize the embedding service.
 
         Args:
-            embeddings: The configured model used to embed documents.
-            splitter_kwargs: Optional arguments passed to the text splitter.
-            store_kwargs: Optional arguments passed to PGVector.
+            embeddings: Configured model used to embed documents.
+            splitter_kwargs: Arguments passed to
+                ``RecursiveCharacterTextSplitter``.
+            store_kwargs: Arguments passed to ``PGVector``.
 
         Raises:
-            ValueError: If the ``POSTGRES_URL`` environment variable is not set.
+            ValueError: If the ``POSTGRES_URL`` environment variable is unset.
         """
         self.embeddings = embeddings
         self.splitter = RecursiveCharacterTextSplitter(**(splitter_kwargs or {}))
@@ -56,24 +64,24 @@ class PapyriEmbeddings:
         )
 
     @classmethod
-    def from_config(cls, path: str | Path) -> "PapyriEmbeddings":
-        """Build an embedder from a YAML configuration file.
+    def from_config(cls, path: str | Path) -> "LangChainEmbeddings":
+        """Create an embedding service from a YAML configuration file.
 
         Args:
-            path: Path to the YAML configuration file.
+            path: YAML configuration file to load.
 
         Returns:
-            A configured embedding service.
+            A configured embedding service instance.
         """
         config = utils.load_config(path)
         return cls(embeddings=utils.build(config.pop("embeddings")), **config)
 
     def compute_document_embeddings(self, text: str, metadata: dict[str, Any]) -> None:
-        """Split and embed one source document.
+        """Split, embed, and store a source document.
 
         Args:
-            text: Document text to split and embed.
-            metadata: Metadata copied to every generated chunk.
+            text: Source text to split and embed.
+            metadata: Metadata to copy to every generated chunk.
         """
         splits = self.splitter.split_documents(
             [
@@ -83,18 +91,60 @@ class PapyriEmbeddings:
 
         self.store.add_documents(splits)
 
-    def embedd_everything(self) -> int:
-        """Embed every non-empty transcription and translation in Scrapyrus.
+    def embedd_selection(self, sql_query: str) -> int:
+        """Embed every source document returned by a SQL query.
 
-        Dates and places are grouped by ``tm_id`` and retained as vector-store
-        metadata. The source and destination use the database configured by
-        ``POSTGRES_URL``.
+        The query must return ``transcription_id``, ``source_path``, ``tm_id``,
+        ``type``, ``language``, ``text``, ``dates``, and ``places`` columns. The
+        query is also wrapped as a subquery to determine the progress-bar total,
+        with one trailing semicolon removed before wrapping.
+
+        Args:
+            sql_query: Trusted SQL ``SELECT`` statement describing the source
+                documents to embed.
 
         Returns:
             The number of source documents embedded.
         """
-        query = sql_text(
-            """
+        selection = sql_query.removesuffix(";")
+        count_query = sql_text(f"SELECT COUNT(*) FROM ({selection}) AS selected_rows")
+
+        count = 0
+
+        with self.engine.connect() as connection:
+            length = connection.execute(count_query).scalar_one()
+
+            for row in tqdm(
+                connection.execute(sql_text(sql_query)).mappings(),
+                desc="rows",
+                total=length,
+            ):
+                metadata = {
+                    "source": "scrapyrus",
+                    "transcription_id": row["transcription_id"],
+                    "source_path": row["source_path"],
+                    "tm_id": row["tm_id"],
+                    "document_type": row["type"],
+                    "language": row["language"],
+                    "dates": row["dates"],
+                    "places": row["places"],
+                }
+                self.compute_document_embeddings(row["text"], metadata)
+                count += 1
+
+        return count
+
+    def embedd_everything(self) -> int:
+        """Embed every non-empty transcription and translation in Scrapyrus.
+
+        Group dates and places by ``tm_id`` and retain them as vector-store
+        metadata. Read source documents from and write embeddings to the database
+        configured by ``POSTGRES_URL``.
+
+        Returns:
+            The number of source documents embedded.
+        """
+        query = """
             WITH dates AS (
                 SELECT
                     tm_id,
@@ -140,33 +190,4 @@ class PapyriEmbeddings:
             WHERE text <> ''
             ORDER BY transcription_id
             """
-        )
-
-        count = 0
-        with self.engine.connect() as connection:
-            for row in connection.execute(query).mappings():
-                metadata = {
-                    "source": "scrapyrus",
-                    "transcription_id": row["transcription_id"],
-                    "source_path": row["source_path"],
-                    "tm_id": row["tm_id"],
-                    "document_type": row["type"],
-                    "language": row["language"],
-                    "dates": row["dates"],
-                    "places": row["places"],
-                }
-                self.compute_document_embeddings(row["text"], metadata)
-                count += 1
-
-        return count
-
-
-if __name__ == "__main__":
-    import os
-
-    from .settings import load_environment
-
-    load_environment()
-
-    embedder = PapyriEmbeddings.from_config(os.getenv("EMBEDDINGS_CONFIG"))
-    embedder.embedd_everything()
+        return self.embedd_selection(query)

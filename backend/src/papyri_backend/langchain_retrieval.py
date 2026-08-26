@@ -14,11 +14,11 @@ from sqlalchemy.engine import make_url
 from .utils import utils
 
 
-class RetrievalAgent:
+class LangChainRetriever:
     """Answer questions by searching a vector store, without running a model."""
 
     @classmethod
-    def from_config(cls, path: str | Path) -> "RetrievalAgent":
+    def from_config(cls, path: str | Path) -> LangChainRetriever:
         """Build a retrieval agent from a yaml config file.
 
         Args:

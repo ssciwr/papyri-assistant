@@ -10,7 +10,7 @@ from typing import Any
 import psycopg
 
 from .langchain_agent import LangChainAgent
-from .retrieval import RetrievalAgent
+from .langchain_retrieval import LangChainRetriever
 
 # The backend package root, which the default config paths are relative to.
 _ROOT = Path(__file__).resolve().parents[2]
@@ -23,7 +23,7 @@ class Session:
     """One agent, the retriever backing its search tools, and their database."""
 
     agent: LangChainAgent
-    retriever: RetrievalAgent
+    retriever: LangChainRetriever
     connection: psycopg.Connection[tuple[Any, ...]]
 
 
@@ -78,7 +78,7 @@ def start() -> Session:
             agent=LangChainAgent.from_config(
                 _config_path("AGENT_CONFIG", "configs/default_langchain_agent.yaml")
             ),
-            retriever=RetrievalAgent.from_config(
+            retriever=LangChainRetriever.from_config(
                 _config_path(
                     "RETRIEVER_CONFIG", "configs/default_langchain_retriever.yaml"
                 )
@@ -106,7 +106,7 @@ def clear() -> None:
     _CURRENT = None
 
 
-def retriever() -> RetrievalAgent:
+def retriever() -> LangChainRetriever:
     """Return the retriever the search tools run against.
 
     Returns:
