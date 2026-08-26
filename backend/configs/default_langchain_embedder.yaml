@@ -3,14 +3,14 @@ embeddings:
   kwargs:
     model_name: Qwen/Qwen3-Embedding-8B
     model_kwargs:
-      truncate_dim: 2000
+      truncate_dim: 2000 # max size that pgvector can index fully by default
     encode_kwargs:
       normalize_embeddings: True
-
+      batch_size: 2
 splitter_kwargs:
   chunk_size: 1000
   chunk_overlap: 200
 
-# This must match the collection configured for RetrievalAgent.
+# This must match the collection configured for LangChainRetriever.
 store_kwargs:
   collection_name: embeddings
