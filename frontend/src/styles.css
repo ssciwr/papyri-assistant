@@ -558,6 +558,22 @@ textarea {
   font-weight: 700;
 }
 
+.decision-action-args {
+  max-height: 160px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid #d8d1c4;
+  border-radius: 6px;
+  background: #fbfaf6;
+  color: #4b5563;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .decision-options {
   display: flex;
   flex-direction: column;

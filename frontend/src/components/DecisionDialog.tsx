@@ -85,6 +85,9 @@ export function DecisionDialog() {
         {interrupt.actions.map((action, index) => (
           <section className="decision-action" key={`${action.name}-${index}`}>
             <h3 className="decision-action-name">{action.name}</h3>
+            <pre className="decision-action-args">
+              {JSON.stringify(action.args, null, 2)}
+            </pre>
             <div className="decision-options">
               {action.allowed_decisions.map((option) => (
                 <label className="decision-option" key={option}>
