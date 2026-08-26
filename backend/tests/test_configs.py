@@ -63,6 +63,7 @@ def test_retriever_config_loads() -> None:
     config = utils.load_config(RETRIEVER_CONFIG)
 
     assert callable(config["embeddings"]["type"])
+    assert config["embeddings"]["kwargs"]["model_kwargs"] == {"truncate_dim": 2000}
     assert config["similarity_search_kwargs"] == {"k": 1}
 
 

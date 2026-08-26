@@ -2,6 +2,8 @@ embeddings:
   type: langchain_huggingface.HuggingFaceEmbeddings
   kwargs:
     model_name: Qwen/Qwen3-Embedding-8B
+    model_kwargs:
+      truncate_dim: 2000 # Must match ingestion vectors in default_langchain_embedder.yaml.
     encode_kwargs:
       normalize_embeddings: True
 
