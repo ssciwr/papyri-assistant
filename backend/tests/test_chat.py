@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any, cast
 
 import pytest
 
 from papyri_backend import chat, session
-from papyri_backend.exceptions import StaleDecision
+from papyri_backend.exceptions import InvalidDecision, StaleDecision
 
 
 class FakeAgent:
@@ -25,7 +26,11 @@ class FakeAgent:
 
 def use(monkeypatch, agent) -> None:
     """Install a session backed by the given fake agent."""
-    fake = session.Session(agent=agent, retriever=object(), connection=object())
+    fake = session.Session(
+        agent=cast(Any, agent),
+        retriever=cast(Any, object()),
+        connection=cast(Any, object()),
+    )
     monkeypatch.setattr(session, "_CURRENT", fake)
 
 
@@ -51,13 +56,45 @@ def test_the_agents_answer_is_returned_unchanged(monkeypatch) -> None:
     assert asyncio.run(chat.answer_with_chat([message("hi")])) == answer
 
 
-def test_a_refused_decision_is_raised_for_the_transport(monkeypatch) -> None:
-    # A stale decision is a protocol error carrying a status code, not agent
-    # output, so it must not be flattened into a chat answer.
-    use(monkeypatch, FakeAgent(error=StaleDecision("no decision pending")))
+@pytest.mark.parametrize(
+    "error",
+    [StaleDecision("no decision pending"), InvalidDecision("decision not allowed")],
+)
+def test_a_refused_decision_is_raised_for_the_transport(monkeypatch, error) -> None:
+    # A decision-protocol error carries a status code, not agent output, so it
+    # must not be flattened into a chat answer.
+    use(monkeypatch, FakeAgent(error=error))
 
-    with pytest.raises(StaleDecision):
+    with pytest.raises(type(error)):
         asyncio.run(chat.answer_with_chat([message("{}")]))
+
+
+def test_an_empty_conversation_is_reported_as_a_chat_error(monkeypatch) -> None:
+    use(monkeypatch, FakeAgent())
+
+    answer = asyncio.run(chat.answer_with_chat([]))
+
+    assert answer["text"].startswith("Exception happened in chat:")
+    assert answer["reasoning"] == ""
+    assert answer["interrupt"] is None
+    assert session._CURRENT is None
+
+
+@pytest.mark.parametrize(
+    "raw_message",
+    [{}, {"content": []}, {"content": [{}]}],
+    ids=["missing-content", "empty-content", "missing-text"],
+)
+def test_malformed_last_messages_are_forwarded_to_the_agent(
+    monkeypatch, raw_message
+) -> None:
+    agent = FakeAgent()
+    use(monkeypatch, agent)
+
+    answer = asyncio.run(chat.answer_with_chat([raw_message]))
+
+    assert answer == agent.answer
+    assert agent.seen == [raw_message]
 
 
 def test_a_failed_run_is_reported_as_chat_output(monkeypatch) -> None:
