@@ -74,9 +74,11 @@ class FakeGraph:
         interrupts: Iterable[FakeInterrupt] = (),
         tool_names: Iterable[str] = (),
         error: Exception | None = None,
+        error_after_messages: Exception | None = None,
     ) -> None:
         self.messages = list(messages)
         self.error = error
+        self.error_after_messages = error_after_messages
         self.calls: list[dict[str, Any]] = []
         self.states: dict[str, FakeGraphState] = {
             "default": FakeGraphState(list(interrupts))
@@ -95,7 +97,17 @@ class FakeGraph:
         self.calls.append({"payload": payload, "config": config, "version": version})
         if self.error is not None:
             raise self.error
-        return FakeStreamRun(self.messages)
+        if hasattr(payload, "resume"):
+            # A successfully accepted decision consumes the checkpoint pause.
+            for state in self.states.values():
+                state.interrupts.clear()
+
+        def messages() -> Iterable[FakeStreamMessage]:
+            yield from self.messages
+            if self.error_after_messages is not None:
+                raise self.error_after_messages
+
+        return FakeStreamRun(messages())
 
     def get_state(self, config: Mapping[str, Any]) -> FakeGraphState:
         thread_id = config.get("configurable", {}).get("thread_id", "default")

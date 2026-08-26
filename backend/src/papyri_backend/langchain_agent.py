@@ -176,23 +176,6 @@ class LangChainAgent:
         """
         return {"configurable": {"thread_id": self.thread_id}}
 
-    def _input_payload(self, user_input: str):
-        """Convert user input into an input payload.
-
-        Args:
-            user_input: Raw input entered by the user.
-
-        Returns:
-            An input payload for the underlying langraph, or ``None`` for an unsupported wrapper
-            command.
-        """
-        command = user_input.strip().split(" ", 1)[0]
-
-        if command.startswith(("\\", "/")):
-            return None  # unsupported wrapper command
-
-        return {"messages": [{"role": "user", "content": user_input}]}
-
     def _pending_interrupt(self):
         """Return the interrupt the run is paused on, if any.
 
@@ -406,9 +389,7 @@ class LangChainAgent:
             # the graph paused exactly as it was.
             payload = self._resume_command(decision)
         else:
-            payload = self._input_payload(text)
-            if payload is None:
-                turn.error = f"{text} is not a processable input"
+            payload = {"messages": [{"role": "user", "content": text}]}
 
         if not turn.error:
             try:
