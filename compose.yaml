@@ -47,7 +47,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_API_URL: ${LLM_API_URL:-}
       LLM_MODEL: ${LLM_MODEL:-}
-      POSTGRES_URL: ${POSTGRES_DOCKER_URL}
+      POSTGRES_URL: postgresql://scrapyrus:scrapyrus@postgres:5432/scrapyrus
       HF_TOKEN: ${HF_TOKEN:-}
       AGENT_CONFIG: /app/backend/configs/default_langchain_agent.yaml
       RETRIEVER_CONFIG: /app/backend/configs/legacy_langchain_retriever.yaml
