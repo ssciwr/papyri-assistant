@@ -3,13 +3,14 @@ embeddings:
   kwargs:
     voyage_api_key: ${VOYAGE_API_KEY}
     model: voyage-4-large
-    encode_kwargs:
-      normalize_embeddings: True
+    output_dimension: &embedding_dim 1024
+    batch_size: 64
 
-# Must match the table contract in default_langchain_embedder.yaml.
+# Must match voyage_ai_langchain_embeddings.yaml.
 store_kwargs:
   table_name: embeddings
   schema_name: public
+  vector_size: *embedding_dim
   content_column: content
   embedding_column: embedding
   id_column:

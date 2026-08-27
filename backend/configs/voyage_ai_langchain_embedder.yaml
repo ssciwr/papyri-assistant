@@ -3,19 +3,18 @@ embeddings:
   kwargs:
     voyage_api_key: ${VOYAGE_API_KEY}
     model: voyage-4-large
-    model_kwargs:
-    encode_kwargs:
-      normalize_embeddings: True
-      batch_size: 64
+    output_dimension: &embedding_dim 1024
+    batch_size: 64
 splitter_kwargs:
   chunk_size: 1000
   chunk_overlap: 200
 
-# The schema for the PGVectorStore table. The retriever will use this same
-# contract when it moves from the legacy PGVector collection store.
+# voyage-4-large returns normalized 1024-dimensional vectors with this explicit
+# output_dimension. The retriever config must use the same model and dimension.
 store_kwargs:
   table_name: embeddings
   schema_name: public
+  vector_size: *embedding_dim
   content_column: content
   embedding_column: embedding
   id_column:
