@@ -84,6 +84,27 @@ def test_retriever_config_loads() -> None:
 
     assert callable(config["embeddings"]["type"])
     assert config["embeddings"]["kwargs"]["model_kwargs"] == {"truncate_dim": 2000}
+    assert config["store_kwargs"] == {
+        "table_name": "embeddings",
+        "schema_name": "public",
+        "vector_size": 2000,
+        "content_column": "content",
+        "embedding_column": "embedding",
+        "id_column": {
+            "name": "chunk_id",
+            "data_type": "TEXT",
+            "nullable": False,
+        },
+        "metadata_columns": [
+            {"name": "source", "data_type": "TEXT", "nullable": False},
+            {
+                "name": "transcription_id",
+                "data_type": "TEXT",
+                "nullable": False,
+            },
+        ],
+        "metadata_json_column": "metadata",
+    }
     assert config["similarity_search_kwargs"] == {"k": 1}
 
 

@@ -7,15 +7,15 @@ from pathlib import Path
 from typing import Any
 
 from langchain_core.documents import Document
-from langchain_postgres import PGVector
-from sqlalchemy import create_engine
+from langchain_postgres.v2.engine import PGEngine
+from langchain_postgres.v2.vectorstores import PGVectorStore
 from sqlalchemy.engine import make_url
 
 from .utils import utils
 
 
 class LangChainRetriever:
-    """Answer questions by searching a vector store, without running a model."""
+    """Answer questions by searching a PGVectorStore table."""
 
     @classmethod
     def from_config(cls, path: str | Path) -> LangChainRetriever:
@@ -44,16 +44,15 @@ class LangChainRetriever:
 
         Args:
             embeddings: The embeddings model queries are embedded with.
-            store_kwargs: Keyword arguments for ``PGVector``, such as
-                ``collection_name``. ``connection`` is not accepted here.
+            store_kwargs: Table settings shared with ``LangChainEmbeddings``.
             similarity_search_kwargs: Keyword arguments applied to every
                 similarity search, such as the number of results ``k``.
             mmr_search_kwargs: Keyword arguments applied to every maximal
                 marginal relevance search, such as ``k``.
 
         Raises:
-            ValueError: ``POSTGRES_URL`` is unset, or ``store_kwargs`` carries a
-                ``connection`` of its own.
+            ValueError: If ``POSTGRES_URL`` is unset or required table settings
+                are missing.
         """
         ps_conn = os.getenv("POSTGRES_URL")
 
@@ -63,24 +62,41 @@ class LangChainRetriever:
                 "POSTGRES_URL environment variable."
             )
 
-        if store_kwargs is not None and "connection" in store_kwargs:
+        store_kwargs = store_kwargs or {}
+        try:
+            table_name = store_kwargs["table_name"]
+            schema_name = store_kwargs["schema_name"]
+            content_column = store_kwargs["content_column"]
+            embedding_column = store_kwargs["embedding_column"]
+            id_column = store_kwargs["id_column"]["name"]
+            metadata_columns = [
+                column["name"] for column in store_kwargs["metadata_columns"]
+            ]
+            metadata_json_column = store_kwargs["metadata_json_column"]
+        except (KeyError, TypeError) as error:
             raise ValueError(
-                "connection is not allowed in store kwargs. use the env variable POSTGRES_URL to set the database connection"
-            )
+                "store_kwargs must include the configured table and column names."
+            ) from error
 
         self.embeddings = embeddings
         self.similarity_search_kwargs = similarity_search_kwargs or {}
         self.mmr_search_kwargs = mmr_search_kwargs or {}
 
-        # SQLAlchemy resolves a bare ``postgresql://`` URL to psycopg2, which is
-        # not installed. Naming psycopg3 on the engine keeps that choice local to
-        # this store, so POSTGRES_URL stays the one plain URL the sql tools read.
-        engine = create_engine(make_url(ps_conn).set(drivername="postgresql+psycopg"))
-
-        self.store = PGVector(
-            embeddings=self.embeddings,
-            connection=engine,
-            **(store_kwargs or {}),
+        # PGVectorStore opens an existing table. Table creation belongs to the
+        # embedding builder so serving a query can never create or reset data.
+        vector_engine = PGEngine.from_connection_string(
+            make_url(ps_conn).set(drivername="postgresql+psycopg")
+        )
+        self.store = PGVectorStore.create_sync(
+            vector_engine,
+            self.embeddings,
+            table_name,
+            schema_name=schema_name,
+            content_column=content_column,
+            embedding_column=embedding_column,
+            id_column=id_column,
+            metadata_columns=metadata_columns,
+            metadata_json_column=metadata_json_column,
         )
 
     def similarity_search(self, query: str) -> list[Document]:
