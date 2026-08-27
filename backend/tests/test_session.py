@@ -10,11 +10,21 @@ import pytest
 from papyri_backend import session
 
 
-def _session() -> session.Session:
+class ClosingConnection:
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+def _session(connection: object | None = None) -> session.Session:
     return session.Session(
         agent=cast(Any, object()),
         retriever=cast(Any, object()),
-        connection=cast(Any, object()),
+        connection=cast(
+            Any, connection if connection is not None else ClosingConnection()
+        ),
     )
 
 
@@ -98,10 +108,30 @@ def test_start_constructs_and_publishes_a_complete_session(monkeypatch) -> None:
     ]
 
 
+def test_start_closes_the_connection_of_the_replaced_session(monkeypatch) -> None:
+    previous_connection = ClosingConnection()
+    previous = _session(previous_connection)
+    new_connection = ClosingConnection()
+    monkeypatch.setattr(session, "_CURRENT", previous)
+    monkeypatch.setattr(session.LangChainAgent, "from_config", lambda _path: object())
+    monkeypatch.setattr(
+        session.LangChainRetriever, "from_config", lambda _path: object()
+    )
+    monkeypatch.setattr(session, "_build_connection", lambda: new_connection)
+
+    current = session.start()
+
+    assert current is session._CURRENT
+    assert current is not previous
+    assert previous_connection.close_calls == 1
+    assert new_connection.close_calls == 0
+
+
 def test_start_wraps_construction_errors_without_replacing_the_current_session(
     monkeypatch,
 ) -> None:
-    previous = _session()
+    previous_connection = ClosingConnection()
+    previous = _session(previous_connection)
     cause = ValueError("invalid agent config")
     monkeypatch.setattr(session, "_CURRENT", previous)
     monkeypatch.setattr(
@@ -117,6 +147,7 @@ def test_start_wraps_construction_errors_without_replacing_the_current_session(
 
     assert excinfo.value.__cause__ is cause
     assert session._CURRENT is previous
+    assert previous_connection.close_calls == 0
 
 
 def test_current_starts_once_then_reuses_the_same_session(monkeypatch) -> None:
@@ -137,12 +168,15 @@ def test_current_starts_once_then_reuses_the_same_session(monkeypatch) -> None:
     assert starts == 1
 
 
-def test_clear_drops_the_current_session(monkeypatch) -> None:
-    monkeypatch.setattr(session, "_CURRENT", _session())
+def test_clear_drops_the_current_session_and_closes_its_connection(monkeypatch) -> None:
+    connection = ClosingConnection()
+    monkeypatch.setattr(session, "_CURRENT", _session(connection))
 
+    session.clear()
     session.clear()
 
     assert session._CURRENT is None
+    assert connection.close_calls == 1
 
 
 def test_retriever_and_connection_delegate_to_the_current_session(monkeypatch) -> None:

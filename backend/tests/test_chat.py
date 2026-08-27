@@ -24,14 +24,24 @@ class FakeAgent:
         return self.answer
 
 
-def use(monkeypatch, agent) -> None:
+class FakeConnection:
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+def use(monkeypatch, agent) -> FakeConnection:
     """Install a session backed by the given fake agent."""
+    connection = FakeConnection()
     fake = session.Session(
         agent=cast(Any, agent),
         retriever=cast(Any, object()),
-        connection=cast(Any, object()),
+        connection=cast(Any, connection),
     )
     monkeypatch.setattr(session, "_CURRENT", fake)
+    return connection
 
 
 def message(text: str) -> dict:
@@ -111,11 +121,12 @@ def test_a_failed_run_is_reported_as_chat_output(monkeypatch) -> None:
 def test_a_failed_run_drops_the_session(monkeypatch) -> None:
     # A failed run can leave the graph in a state the next turn cannot resume
     # from, so the next request starts a fresh agent rather than reusing it.
-    use(monkeypatch, FakeAgent(error=RuntimeError("boom")))
+    connection = use(monkeypatch, FakeAgent(error=RuntimeError("boom")))
 
     asyncio.run(chat.answer_with_chat([message("hi")]))
 
     assert session._CURRENT is None
+    assert connection.close_calls == 1
 
 
 def test_new_agent_starts_a_session(monkeypatch) -> None:

@@ -26,6 +26,10 @@ class Session:
     retriever: LangChainRetriever
     connection: psycopg.Connection[tuple[Any, ...]]
 
+    def close(self) -> None:
+        """Release resources owned by this session."""
+        self.connection.close()
+
 
 def _config_path(variable: str, default: str) -> Path:
     """Find a config file, from the environment or from the shipped default.
@@ -74,7 +78,7 @@ def start() -> Session:
     try:
         # The retriever is not an agent of its own: it backs the search tools
         # the agent calls, which is what makes the agentic path into RAG.
-        _CURRENT = Session(
+        replacement = Session(
             agent=LangChainAgent.from_config(
                 _config_path("AGENT_CONFIG", "configs/default_langchain_agent.yaml")
             ),
@@ -88,7 +92,12 @@ def start() -> Session:
     except Exception as exc:
         raise RuntimeError(f"Error during agent construction: {exc}") from exc
 
-    return _CURRENT
+    previous = _CURRENT
+    _CURRENT = replacement
+    if previous is not None:
+        previous.close()
+
+    return replacement
 
 
 def current() -> Session:
@@ -101,9 +110,13 @@ def current() -> Session:
 
 
 def clear() -> None:
-    """Drop the current session, so the next turn starts a fresh one."""
+    """Close and drop the current session, so the next turn starts a fresh one."""
     global _CURRENT
+
+    current = _CURRENT
     _CURRENT = None
+    if current is not None:
+        current.close()
 
 
 def retriever() -> LangChainRetriever:
