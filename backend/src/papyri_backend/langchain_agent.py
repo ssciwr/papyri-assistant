@@ -21,6 +21,7 @@ from .utils import utils
 # and casing vary between deployments.
 _THINK_OPEN = re.compile(r"<\s*think\s*>", re.IGNORECASE)
 _THINK_CLOSE = re.compile(r"</\s*think\s*>", re.IGNORECASE)
+_EMPTY_ANSWER_MESSAGE = "No answer was produced. Please try again."
 
 
 def split_think(text: str) -> tuple[str, str]:
@@ -81,12 +82,18 @@ class TurnOutput:
             interrupt: The interrupt the run is now paused on, if any.
 
         Returns:
-            The turn's ``text``, ``reasoning`` and ``interrupt``.
+            The turn's ``text``, ``reasoning`` and ``interrupt``. A completed,
+            uninterrupted turn without answer text receives a recoverable
+            fallback message.
         """
         # A run that failed leaves no usable answer, so the error takes its
         # place rather than trailing whatever was emitted before the failure.
+        text = self.error.strip() or self.answer.strip()
+        if not text and interrupt is None:
+            text = _EMPTY_ANSWER_MESSAGE
+
         return {
-            "text": self.error.strip() or self.answer.strip(),
+            "text": text,
             "reasoning": self.reasoning.strip(),
             "interrupt": interrupt,
         }
@@ -371,10 +378,10 @@ class LangChainAgent:
                 the user's text.
 
         Returns:
-            The agent's ``text`` answer and its ``reasoning`` trace, either of
-            which may be empty, plus the ``interrupt`` the run is now paused on,
-            if any. A run that failed leaves no answer, so the collected error
-            takes its place.
+            The agent's non-empty ``text`` answer, its ``reasoning`` trace, and
+            the ``interrupt`` the run is now paused on, if any. A run that failed
+            leaves no answer, so the collected error takes its place. A completed
+            run without answer text receives a recoverable fallback message.
 
         Raises:
             StaleDecision: The message answered an interrupt that is not pending.
