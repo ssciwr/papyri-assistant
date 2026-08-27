@@ -1,0 +1,28 @@
+embeddings:
+  type: langchain_huggingface.HuggingFaceEmbeddings
+  kwargs:
+    model_name: Qwen/Qwen3-Embedding-8B
+    model_kwargs:
+      truncate_dim: 2000
+    encode_kwargs:
+      normalize_embeddings: True
+
+# Read the PGVector collection schema produced by the previous ingestion
+# pipeline. Its UUID-valued `id` is an opaque retrieval identifier, not the
+# deterministic `chunk_id` used by the current embedding pipeline.
+store_kwargs:
+  table_name: langchain_pg_embedding
+  schema_name: public
+  content_column: document
+  embedding_column: embedding
+  id_column:
+    name: id
+    data_type: TEXT
+    nullable: false
+  metadata_columns: []
+  metadata_json_column: cmetadata
+
+similarity_search_kwargs:
+  k: 1
+mmr_search_kwargs:
+  k: 4
