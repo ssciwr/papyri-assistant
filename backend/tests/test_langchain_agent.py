@@ -150,7 +150,7 @@ def test_an_empty_completed_run_returns_a_recoverable_message(user_message) -> N
     answer = _agent(graph).run_single_turn(user_message("Find a lease."))
 
     assert answer == {
-        "text": "The agent returned an empty or unknown answer. Please try again.",
+        "text": "No answer was produced. Please try again.",
         "reasoning": "",
         "interrupt": None,
     }
