@@ -7,9 +7,25 @@ embeddings:
     encode_kwargs:
       normalize_embeddings: True
 
-# The database connection comes from the POSTGRES_URL environment variable.
+# Must match the table contract in default_langchain_embedder.yaml.
 store_kwargs:
-  collection_name: embeddings
+  table_name: embeddings
+  schema_name: public
+  vector_size: 2000
+  content_column: content
+  embedding_column: embedding
+  id_column:
+    name: chunk_id
+    data_type: TEXT
+    nullable: false
+  metadata_columns:
+    - name: source
+      data_type: TEXT
+      nullable: false
+    - name: transcription_id
+      data_type: TEXT
+      nullable: false
+  metadata_json_column: metadata
 
 similarity_search_kwargs:
   k: 1
