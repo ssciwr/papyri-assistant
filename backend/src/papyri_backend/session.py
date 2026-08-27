@@ -78,13 +78,10 @@ def start() -> Session:
     try:
         # The retriever is not an agent of its own: it backs the search tools
         # the agent calls, which is what makes the agentic path into RAG.
-        print("building agent")
         agent = LangChainAgent.from_config(
             _config_path("AGENT_CONFIG", "configs/default_langchain_agent.yaml")
         )
-        print("done")
 
-        print("building retriever")
         retriever = LangChainRetriever.from_config(
             _config_path("RETRIEVER_CONFIG", "configs/default_langchain_retriever.yaml")
         )
