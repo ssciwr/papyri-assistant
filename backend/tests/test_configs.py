@@ -21,6 +21,7 @@ CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 AGENT_CONFIG = CONFIGS / "default_langchain_agent.yaml"
 EMBEDDER_CONFIG = CONFIGS / "default_langchain_embedder.yaml"
 RETRIEVER_CONFIG = CONFIGS / "default_langchain_retriever.yaml"
+LEGACY_RETRIEVER_CONFIG = CONFIGS / "legacy_langchain_retriever.yaml"
 
 
 @pytest.fixture
@@ -33,8 +34,8 @@ def llm_env(monkeypatch) -> None:
 
 @pytest.mark.parametrize(
     "path",
-    [AGENT_CONFIG, EMBEDDER_CONFIG, RETRIEVER_CONFIG],
-    ids=["agent", "embedder", "retriever"],
+    [AGENT_CONFIG, EMBEDDER_CONFIG, RETRIEVER_CONFIG, LEGACY_RETRIEVER_CONFIG],
+    ids=["agent", "embedder", "retriever", "legacy-retriever"],
 )
 def test_config_file_exists(path: Path) -> None:
     assert path.is_file()
@@ -106,6 +107,25 @@ def test_retriever_config_loads() -> None:
         "metadata_json_column": "metadata",
     }
     assert config["similarity_search_kwargs"] == {"k": 1}
+
+
+def test_legacy_retriever_config_maps_the_existing_collection_schema() -> None:
+    config = utils.load_config(LEGACY_RETRIEVER_CONFIG)
+
+    assert callable(config["embeddings"]["type"])
+    assert config["store_kwargs"] == {
+        "table_name": "langchain_pg_embedding",
+        "schema_name": "public",
+        "content_column": "document",
+        "embedding_column": "embedding",
+        "id_column": {
+            "name": "id",
+            "data_type": "TEXT",
+            "nullable": False,
+        },
+        "metadata_columns": [],
+        "metadata_json_column": "cmetadata",
+    }
 
 
 def test_agent_config_builds_an_agent(llm_env) -> None:
