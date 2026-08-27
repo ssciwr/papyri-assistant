@@ -49,6 +49,7 @@ services:
       LLM_MODEL: ${LLM_MODEL:-}
       POSTGRES_URL: postgresql://scrapyrus:scrapyrus@postgres:5432/scrapyrus
       HF_TOKEN: ${HF_TOKEN:-}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
       AGENT_CONFIG: /app/backend/configs/default_langchain_agent.yaml
       RETRIEVER_CONFIG: /app/backend/configs/legacy_langchain_retriever.yaml
       PYTHONPATH: /app/backend/src
