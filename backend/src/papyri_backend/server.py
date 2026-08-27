@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -9,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from . import session
 from .chat import answer_with_chat, new_agent
 from .exceptions import DecisionError, InvalidDecision, StaleDecision
 from .settings import load_environment
@@ -55,7 +58,17 @@ def _cors_origins() -> list[str]:
     ]
 
 
-app = FastAPI(title="Papyri Backend")
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    """Own the process-local chat session for the server's lifetime."""
+    session.start()
+    try:
+        yield
+    finally:
+        session.clear()
+
+
+app = FastAPI(title="Papyri Backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

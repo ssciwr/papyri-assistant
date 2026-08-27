@@ -12,6 +12,7 @@ import json
 
 import pytest
 from fastapi.exceptions import RequestValidationError
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from papyri_backend import server
@@ -20,6 +21,17 @@ from papyri_backend import server
 def test_app_is_named() -> None:
     # The title is what the generated OpenAPI docs are published under.
     assert server.app.title == "Papyri Backend"
+
+
+def test_app_lifespan_starts_and_clears_the_session(monkeypatch) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(server.session, "start", lambda: events.append("start"))
+    monkeypatch.setattr(server.session, "clear", lambda: events.append("clear"))
+
+    with TestClient(server.app):
+        assert events == ["start"]
+
+    assert events == ["start", "clear"]
 
 
 def test_cors_origins_splits_and_strips_env(monkeypatch) -> None:
