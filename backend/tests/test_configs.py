@@ -22,6 +22,8 @@ AGENT_CONFIG = CONFIGS / "default_langchain_agent.yaml"
 EMBEDDER_CONFIG = CONFIGS / "default_langchain_embedder.yaml"
 RETRIEVER_CONFIG = CONFIGS / "default_langchain_retriever.yaml"
 LEGACY_RETRIEVER_CONFIG = CONFIGS / "legacy_langchain_retriever.yaml"
+VOYAGE_EMBEDDER_CONFIG = CONFIGS / "voyage_ai_langchain_embedder.yaml"
+VOYAGE_RETRIEVER_CONFIG = CONFIGS / "voyage_ai_langchain_retriever.yaml"
 
 
 @pytest.fixture
@@ -32,10 +34,29 @@ def llm_env(monkeypatch) -> None:
     monkeypatch.setenv("LLM_API_KEY", "test-key")
 
 
+@pytest.fixture
+def voyage_env(monkeypatch) -> None:
+    monkeypatch.setenv("VOYAGE_API_KEY", "test-key")
+
+
 @pytest.mark.parametrize(
     "path",
-    [AGENT_CONFIG, EMBEDDER_CONFIG, RETRIEVER_CONFIG, LEGACY_RETRIEVER_CONFIG],
-    ids=["agent", "embedder", "retriever", "legacy-retriever"],
+    [
+        AGENT_CONFIG,
+        EMBEDDER_CONFIG,
+        RETRIEVER_CONFIG,
+        LEGACY_RETRIEVER_CONFIG,
+        VOYAGE_EMBEDDER_CONFIG,
+        VOYAGE_RETRIEVER_CONFIG,
+    ],
+    ids=[
+        "agent",
+        "embedder",
+        "retriever",
+        "legacy-retriever",
+        "voyage-embedder",
+        "voyage-retriever",
+    ],
 )
 def test_config_file_exists(path: Path) -> None:
     assert path.is_file()
@@ -126,6 +147,17 @@ def test_legacy_retriever_config_maps_the_existing_collection_schema() -> None:
         "metadata_columns": [],
         "metadata_json_column": "cmetadata",
     }
+
+
+@pytest.mark.parametrize("path", [VOYAGE_EMBEDDER_CONFIG, VOYAGE_RETRIEVER_CONFIG])
+def test_voyage_configs_build_matching_embeddings(path: Path, voyage_env) -> None:
+    config = utils.load_config(path)
+    embeddings = utils.build(config["embeddings"])
+
+    assert embeddings.model == "voyage-4-large"
+    assert embeddings.output_dimension == 1024
+    assert embeddings.batch_size == 64
+    assert config["store_kwargs"]["vector_size"] == 1024
 
 
 def test_agent_config_builds_an_agent(llm_env) -> None:
