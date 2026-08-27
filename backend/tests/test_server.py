@@ -1,14 +1,14 @@
-"""Cover the FastAPI layer: its configuration, its request model and its handlers.
+"""Cover the FastAPI layer's established units and public route contracts.
 
-The endpoint functions are called directly, and the agent behind them is
-replaced by a fake, so these tests exercise the HTTP layer's own behaviour
-without starting a server or reaching a model.
+The agent is replaced by a fake, so both the direct handler baselines and the
+TestClient route tests run without reaching a model.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 import pytest
 from fastapi.exceptions import RequestValidationError
@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from papyri_backend import server
+from papyri_backend.exceptions import InvalidDecision, StaleDecision
 
 
 def test_app_is_named() -> None:
@@ -114,3 +115,102 @@ def test_validation_exception_handler_returns_client_error() -> None:
     assert json.loads(response.body) == {
         "error": "Expected a JSON body with a messages array."
     }
+
+
+@pytest.fixture
+def client() -> TestClient:
+    return TestClient(server.app)
+
+
+def test_health_route(client: TestClient) -> None:
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+
+def test_new_route(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(
+        server, "new_agent", lambda: {"text": "DeepAgent has been restarted"}
+    )
+
+    response = client.post("/new")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "text": "DeepAgent has been restarted",
+        "reasoning": "",
+        "interrupt": None,
+    }
+
+
+def test_new_route_reports_agent_errors(client: TestClient, monkeypatch) -> None:
+    def fail_to_start() -> dict[str, str]:
+        raise RuntimeError("startup failed")
+
+    monkeypatch.setattr(server, "new_agent", fail_to_start)
+
+    response = client.post("/new")
+
+    assert response.status_code == 500
+    assert response.json() == {"error": "startup failed"}
+
+
+def test_chat_route(client: TestClient, monkeypatch) -> None:
+    async def answer(messages: list[Any]) -> dict[str, str]:
+        assert messages == [{"role": "user", "content": "Hi"}]
+        return {"text": "Hello"}
+
+    monkeypatch.setattr(server, "answer_with_chat", answer)
+
+    response = client.post(
+        "/chat", json={"messages": [{"role": "user", "content": "Hi"}]}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "text": "Hello",
+        "reasoning": "",
+        "interrupt": None,
+    }
+
+
+def test_chat_route_reports_agent_errors(client: TestClient, monkeypatch) -> None:
+    async def fail(_messages: list[Any]) -> dict[str, str]:
+        raise RuntimeError("provider failed")
+
+    monkeypatch.setattr(server, "answer_with_chat", fail)
+
+    response = client.post("/chat", json={"messages": [{"content": "Hi"}]})
+
+    assert response.status_code == 500
+    assert response.json() == {"error": "provider failed"}
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code"),
+    [
+        (StaleDecision("decision is stale"), 409),
+        (InvalidDecision("decision is invalid"), 422),
+    ],
+)
+def test_chat_route_preserves_decision_error_status(
+    client: TestClient, monkeypatch, error: Exception, status_code: int
+) -> None:
+    async def refuse(_messages: list[Any]) -> dict[str, str]:
+        raise error
+
+    monkeypatch.setattr(server, "answer_with_chat", refuse)
+
+    response = client.post("/chat", json={"messages": [{"content": "decision"}]})
+
+    assert response.status_code == status_code
+    assert response.json() == {"error": str(error)}
+
+
+@pytest.mark.parametrize("body", [None, {}, {"messages": []}])
+def test_chat_route_rejects_invalid_requests(client: TestClient, body: Any) -> None:
+    response = client.post("/chat", json=body)
+
+    assert response.status_code == 400
+    assert response.json() == {"error": "Expected a JSON body with a messages array."}
