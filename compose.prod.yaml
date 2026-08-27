@@ -36,12 +36,19 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       BACKEND_PORT: "3001"
       CORS_ORIGIN: "${CORS_ORIGIN:-}"
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_API_URL: ${LLM_API_URL:-}
       LLM_MODEL: ${LLM_MODEL:-}
+      POSTGRES_URL: postgresql://scrapyrus:scrapyrus@postgres:5432/scrapyrus
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - huggingface-cache:/root/.cache/huggingface
     expose:
       - "3001"
     restart: unless-stopped
@@ -50,6 +57,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+      start_period: ${BACKEND_HEALTH_START_PERIOD:-15m}
 
   frontend:
     build:
@@ -80,3 +88,6 @@ secrets:
     file: ${TLS_CERTIFICATE_PATH:-./certs/tls.pem}
   tls_private_key:
     file: ${TLS_PRIVATE_KEY_PATH:-./certs/tls.key}
+
+volumes:
+  huggingface-cache:
