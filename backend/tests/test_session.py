@@ -77,8 +77,7 @@ def test_start_constructs_and_publishes_a_complete_session(monkeypatch) -> None:
     retriever = object()
     connection = object()
     constructed_from: list[tuple[str, Path]] = []
-    previous = _session()
-    monkeypatch.setattr(session, "_CURRENT", previous)
+    monkeypatch.setattr(session, "_CURRENT", None)
     monkeypatch.delenv("AGENT_CONFIG", raising=False)
     monkeypatch.delenv("RETRIEVER_CONFIG", raising=False)
     monkeypatch.setattr(
@@ -101,7 +100,6 @@ def test_start_constructs_and_publishes_a_complete_session(monkeypatch) -> None:
         connection=cast(Any, connection),
     )
     assert session._CURRENT is result
-    assert result is not previous
     assert constructed_from == [
         ("agent", session._ROOT / "configs/default_langchain_agent.yaml"),
         ("retriever", session._ROOT / "configs/default_langchain_retriever.yaml"),

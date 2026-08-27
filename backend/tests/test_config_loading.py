@@ -52,6 +52,13 @@ def test_a_bad_import_path_is_reported(tmp_path) -> None:
         utils.load_config(path)
 
 
+def test_a_bare_non_import_value_under_type_is_reported(tmp_path) -> None:
+    path = write(tmp_path, "model:\n  type: definitely_not_an_import_path\n")
+
+    with pytest.raises(ValueError, match="not an import path"):
+        utils.load_config(path)
+
+
 def test_environment_variables_are_substituted(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("SOME_URL", "http://example.test/v1")
     path = write(tmp_path, "base_url: ${SOME_URL}\n")
