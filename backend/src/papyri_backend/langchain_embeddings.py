@@ -3,12 +3,14 @@ from pathlib import Path
 from typing import Any
 
 from langchain_core.documents import Document
-from langchain_postgres import PGVector
+from langchain_postgres.v2.engine import Column, PGEngine
+from langchain_postgres.v2.vectorstores import PGVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy import text as sql_text
 from sqlalchemy.engine import make_url
 from tqdm import tqdm
+
 from .utils import utils
 
 
@@ -17,13 +19,13 @@ class LangChainEmbeddings:
 
     This service splits source text into chunks, embeds each chunk with the
     configured model, and stores the resulting vectors in PostgreSQL through
-    PGVector.
+    PGVectorStore.
 
     Attributes:
         embeddings: Model used to produce vector embeddings.
         splitter: Text splitter used to create embeddable chunks.
         engine: SQLAlchemy engine connected to the source database.
-        store: PGVector store that receives the embedded chunks.
+        store: PGVectorStore table that receives the embedded chunks.
     """
 
     def __init__(
@@ -38,13 +40,17 @@ class LangChainEmbeddings:
             embeddings: Configured model used to embed documents.
             splitter_kwargs: Arguments passed to
                 ``RecursiveCharacterTextSplitter``.
-            store_kwargs: Arguments passed to ``PGVector``.
+            store_kwargs: Table contract used to create and open a
+                ``PGVectorStore`` table.
 
         Raises:
-            ValueError: If the ``POSTGRES_URL`` environment variable is unset.
+            ValueError: If ``POSTGRES_URL`` is unset or ``store_kwargs`` does
+                not describe a valid PGVectorStore table.
         """
         self.embeddings = embeddings
         self.splitter = RecursiveCharacterTextSplitter(**(splitter_kwargs or {}))
+        self._validate_store_kwargs(store_kwargs)
+        self.store_kwargs = store_kwargs
 
         ps_conn = os.getenv("POSTGRES_URL")
         if ps_conn is None:
@@ -53,15 +59,10 @@ class LangChainEmbeddings:
                 "POSTGRES_URL environment variable."
             )
 
-        self.engine = create_engine(
-            make_url(ps_conn).set(drivername="postgresql+psycopg")
-        )
-
-        self.store = PGVector(
-            embeddings=self.embeddings,
-            connection=self.engine,
-            **(store_kwargs or {}),
-        )
+        database_url = make_url(ps_conn).set(drivername="postgresql+psycopg")
+        self.engine = create_engine(database_url)
+        self.vector_engine = PGEngine.from_connection_string(database_url)
+        self.store = self._open_store()
 
     @classmethod
     def from_config(cls, path: str | Path) -> "LangChainEmbeddings":
@@ -76,7 +77,90 @@ class LangChainEmbeddings:
         config = utils.load_config(path)
         return cls(embeddings=utils.build(config.pop("embeddings")), **config)
 
-    def compute_document_embeddings(self, text: str, metadata: dict[str, Any]) -> None:
+    @staticmethod
+    def _validate_store_kwargs(store_kwargs: dict[str, Any] | None) -> None:
+        """Raise ValueError when required table settings are missing.
+
+        Args:
+            store_kwargs: PGVectorStore table settings from the embedding
+                configuration.
+
+        Raises:
+            ValueError: If a required setting is missing.
+        """
+        if not isinstance(store_kwargs, dict):
+            raise ValueError("store_kwargs must be a mapping.")
+
+        required_keys = (
+            "table_name",
+            "schema_name",
+            "vector_size",
+            "content_column",
+            "embedding_column",
+            "id_column",
+            "metadata_columns",
+            "metadata_json_column",
+        )
+        missing = [key for key in required_keys if key not in store_kwargs]
+        if missing:
+            raise ValueError(f"store_kwargs is missing: {', '.join(missing)}.")
+
+        columns = [store_kwargs["id_column"], *store_kwargs["metadata_columns"]]
+        for column in columns:
+            missing = [
+                key for key in ("name", "data_type", "nullable") if key not in column
+            ]
+            if missing:
+                raise ValueError(
+                    f"store_kwargs column is missing: {', '.join(missing)}."
+                )
+
+    def _open_store(self, *, reset: bool = False) -> PGVectorStore:
+        """Open the configured PGVectorStore table.
+
+        Args:
+            reset: Whether to replace the existing table with an empty one.
+
+        Returns:
+            A synchronous PGVectorStore connected to the configured table.
+        """
+        table_name = self.store_kwargs["table_name"]
+        schema_name = self.store_kwargs["schema_name"]
+        id_column = self.store_kwargs["id_column"]
+        metadata_columns = self.store_kwargs["metadata_columns"]
+        table_exists = inspect(self.engine).has_table(table_name, schema=schema_name)
+
+        # PGVectorStore.create_sync opens an existing table; table creation is
+        # deliberately kept here so normal embedding and destructive reset use
+        # the same schema settings.
+        if reset or not table_exists:
+            self.vector_engine.init_vectorstore_table(
+                table_name,
+                self.store_kwargs["vector_size"],
+                schema_name=schema_name,
+                content_column=self.store_kwargs["content_column"],
+                embedding_column=self.store_kwargs["embedding_column"],
+                id_column=Column(**id_column),
+                metadata_columns=[Column(**column) for column in metadata_columns],
+                metadata_json_column=self.store_kwargs["metadata_json_column"],
+                overwrite_existing=reset,
+            )
+
+        return PGVectorStore.create_sync(
+            self.vector_engine,
+            self.embeddings,
+            table_name,
+            schema_name=schema_name,
+            content_column=self.store_kwargs["content_column"],
+            embedding_column=self.store_kwargs["embedding_column"],
+            id_column=id_column["name"],
+            metadata_columns=[column["name"] for column in metadata_columns],
+            metadata_json_column=self.store_kwargs["metadata_json_column"],
+        )
+
+    def compute_document_embeddings(
+        self, text: str, metadata: dict[str, Any], source: str = "scrapyrus"
+    ) -> None:
         """Split, embed, and store a source document.
 
         Args:
@@ -88,10 +172,11 @@ class LangChainEmbeddings:
                 Document(page_content=text, metadata=metadata),
             ]
         )
+        transcription_id = metadata["transcription_id"]
+        ids = [f"{source}:{transcription_id}:{index}" for index in range(len(splits))]
+        self.store.add_documents(splits, ids=ids)
 
-        self.store.add_documents(splits)
-
-    def embedd_selection(self, sql_query: str) -> int:
+    def embedd_selection(self, sql_query: str, source: str = "scrapyrus") -> int:
         """Embed every source document returned by a SQL query.
 
         The query must return ``transcription_id``, ``source_path``, ``tm_id``,
@@ -120,8 +205,8 @@ class LangChainEmbeddings:
                 total=length,
             ):
                 metadata = {
-                    "source": "scrapyrus",
-                    "transcription_id": row["transcription_id"],
+                    "source": source,
+                    "transcription_id": str(row["transcription_id"]),
                     "source_path": row["source_path"],
                     "tm_id": row["tm_id"],
                     "document_type": row["type"],
@@ -129,12 +214,12 @@ class LangChainEmbeddings:
                     "dates": row["dates"],
                     "places": row["places"],
                 }
-                self.compute_document_embeddings(row["text"], metadata)
+                self.compute_document_embeddings(row["text"], metadata, source=source)
                 count += 1
 
         return count
 
-    def embedd_everything(self) -> int:
+    def embedd_everything(self, source: str = "scrapyrus") -> int:
         """Embed every non-empty transcription and translation in Scrapyrus.
 
         Group dates and places by ``tm_id`` and retain them as vector-store
@@ -190,4 +275,24 @@ class LangChainEmbeddings:
             WHERE text <> ''
             ORDER BY transcription_id
             """
-        return self.embedd_selection(query)
+        return self.embedd_selection(query, source=source)
+
+    def reset_everything(self) -> None:
+        """Replace the configured vector-store table with an empty equivalent.
+
+        This operation destroys every embedding in the configured table. It does
+        not affect the source tables or other PostgreSQL tables.
+        """
+        self.store = self._open_store(reset=True)
+
+    def rebuild_everything(self, source: str = "scrapyrus") -> int:
+        """Replace the vector-store table and embed the complete source corpus.
+
+        Args:
+            source: Namespace included in chunk IDs and stored metadata.
+
+        Returns:
+            The number of source documents embedded.
+        """
+        self.reset_everything()
+        return self.embedd_everything(source=source)
