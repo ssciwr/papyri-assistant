@@ -229,6 +229,7 @@ class LangChainEmbeddings:
         Returns:
             The number of source documents embedded.
         """
+        # TODO: check against the data whether this SELECTs correctly or if something is missing or incorrectly queried.
         query = """
             WITH dates AS (
                 SELECT
