@@ -1,79 +1,69 @@
 # Papyri Assistant
 
-> **Work in progress.** The core local chat, agent, SQL, and vector-retrieval paths are implemented and unit tested. Database/model integration and the embedding-provider setup still need setup adjustments by hand.
+> **Work in progress.** Local chat, agent, SQL, and vector-retrieval paths are implemented and unit tested. Database ingestion, vector-table selection, and embedding-provider setup still require manual configuration.
 
-## What it is
+## Overview
 
-Papyri Assistant is a research chat application for working with a papyrology database.
+Papyri Assistant is a research chat application for a papyrology database.
 
-- The React/assistant-ui frontend provides chat, conversation reset, export, reasoning display, and approval dialogs for interrupted actions.
-- The FastAPI backend owns a LangChain/Deep Agents agent.
-- The agent can inspect/query PostgreSQL and search a pgvector store with similarity or maximal-marginal-relevance (MMR) retrieval.
-- Scrapyrus supplies the papyrus metadata and transcription tables. Embeddings are built separately and stored in PostgreSQL.
+- React-based web frontend provides chat, session reset, export, reasoning display, and approve/reject dialogs for interrupted actions.
+- FastAPI-based python backend hosts a LangChain/DeepAgents agent with basic agent harness.
+- Agent tools inspect/query PostgreSQL and search pgvector with similarity or maximal-marginal-relevance (MMR) retrieval.
+- PostgreSQL database supplies papyrus metadata and transcriptions; a separate script creates embeddings usint the pgvector extension.
 
-The browser talks to `POST /chat`; the backend runs the agent and returns a complete response rather than streaming HTTP events. `/new` replaces the current backend session and `/health` reports process health.
-**The non-streaming behavior is temporary and will most likely change in the future (issue [[#12](https://github.com/ssciwr/papyri-assistant/issues/12)]).
+The backend returns each complete response rather than streaming HTTP events. `new` replaces the current session  **Non-streaming HTTP responses are temporary and tracked in [#12](https://github.com/ssciwr/papyri-assistant/issues/12).**
 
-## Current status and limitations
+## Current status
 
 Implemented:
 
-- configurable OpenAI-compatible chat model;
-- configurable Hugging Face and VoyageAI embedding/retrieval adapters;
+- configurable OpenAI-compatible chat models;
+- Hugging Face and VoyageAI embedding/retrieval configurations;
 - SQL inspection/query tools and four pgvector search tools;
 - resumable approve/reject dialogs for configured agent actions;
 - development and TLS-enabled production Compose stacks;
-- deterministic backend unit suite.
+- deterministic backend unit tests with a 90% branch-coverage threshold.
 
-Still missing or incomplete:
+Known limitations:
 
-- The process has one in-memory, process-global agent session. Checkpoints are not durable, multiple users are not isolated, and restarting the backend loses the conversation.
-- There is no authentication or authorization layer.
-- The SQL tool accepts free-form SQL. It rolls every call back, including successful calls, but there is currently no SQL parser/allow-list gateway and Compose connects as the database owner.
-- Embedding generation is a manual host-side script; it is not currently a Compose job and `backend/scripts` is not copied into the backend image.
-- The current agent hard stops when the context window of the model is full. Recovery is only possible via a new session.
+- One in-memory, process-global session: users are not isolated, checkpoints are not durable, and backend restarts lose the conversation.
+- No authentication or authorization.
+- The SQL tool accepts free-form SQL. Every call is rolled back, including successful calls, but there is no parser/allow-list gateway and Compose connects as the database owner.
+- Embedding generation is a host-side script, not a Compose job; `backend/scripts` is not copied into the backend image.
+- Real-service `integration` and `live_model` test lanes are marked but not yet implemented.
 
 ## Requirements
 
-For local development:
-
-- Node.js 20.19 or newer
-- Python 3.11 or newer
-- PostgreSQL 16 with pgvector, or Docker with Compose
+- Node.js 20.19+
+- Python 3.11+
+- PostgreSQL 16 with pgvector, or Docker Compose
 - An OpenAI-compatible chat-model API
-- Enough storage and memory for the selected embedding model. The default Qwen model is a large download and can make first startup slow.
+- Storage and memory for the selected embedding model; the default Qwen model is a large first download
 
-## Configuration files
+## Configuration
 
-Configuration is YAML-based. Import paths under `type` are resolved and constructed at runtime; `${VARIABLE}` and `${VARIABLE:-fallback}` expressions are expanded from the environment.
+YAML `type` values are imported and constructed at runtime. `${VARIABLE}` and `${VARIABLE:-fallback}` expressions are expanded from the environment.
 
 | File | Purpose |
 | --- | --- |
-| `backend/configs/default_langchain_agent.yaml` | Chat model, system prompt, tools, middleware, interrupts, filesystem permissions, and Deep Agents backends. |
-| `backend/configs/default_langchain_embedder.yaml` | Hugging Face Qwen3 embedding model, text splitter, and the current `embeddings` table contract. |
-| `backend/configs/default_langchain_retriever.yaml` | Retriever matching the current Hugging Face embedder and `embeddings` table.  **IF YOU USE A DATABASE WITH EMBEDDINGS BUILT VIA `scripts/compute_embeddings.py` WITH `default_langchain_embedder.yaml`, USE THIS ONE** |
-| `backend/configs/legacy_langchain_retriever.yaml` | Compatibility mapping for an existing LangChain collection table named `langchain_pg_embedding` which has been built with the scarpyrus project. **IF YOU USE A DATABASE WITH SCRAPYRUS BUILT EMBEDDINGS, USE THIS ONE**|
-| `backend/configs/voyage_ai_langchain_embedder.yaml` | VoyageAI `voyage-4-large` ingestion configured for 1024-dimensional vectors. |
-| `backend/configs/voyage_ai_langchain_retriever.yaml` | Matching VoyageAI retriever for the current `embeddings` table. he current Hugging Face embedder and `embeddings` table.  **IF YOU USE A DATABASE WITH EMBEDDINGS BUILT VIA `scripts/compute_embeddings.py` WITH `voyage_ai_langchain_embedder.yaml`, USE THIS ONE** |
+| `backend/configs/default_langchain_agent.yaml` | Model, prompt, tools, middleware, interrupts, filesystem permissions, and Deep Agents backends. |
+| `backend/configs/default_langchain_embedder.yaml` | Qwen3 embedding model, splitter, and current `embeddings` table contract. |
+| `backend/configs/default_langchain_retriever.yaml` | Qwen3 retriever for the current `embeddings` table. **IF YOU USE A DATABASE WITH EMBEDDINGS BUILT VIA `scripts/compute_embeddings.py` WITH `default_langchain_embedder.yaml`, USE THIS ONE.** |
+| `backend/configs/legacy_langchain_retriever.yaml` | Existing Scrapyrus/LangChain table. **IF YOU USE A DATABASE WITH SCRAPYRUS-BUILT EMBEDDINGS, USE THIS ONE.** |
+| `backend/configs/voyage_ai_langchain_embedder.yaml` | VoyageAI `voyage-4-large` ingestion with 1024-dimensional vectors. |
+| `backend/configs/voyage_ai_langchain_retriever.yaml` | Matching VoyageAI retriever for the current `embeddings` table. **IF YOU USE A DATABASE WITH EMBEDDINGS BUILT VIA `scripts/compute_embeddings.py` WITH `voyage_ai_langchain_embedder.yaml`, USE THIS ONE.** |
 
-Override the server defaults with:
+The config files used can be overridden in the compose files. Per default, the `default_langchain_agent` and voyage-ai configs will be used.
 
-```sh
-AGENT_CONFIG=/absolute/or/working-directory-relative/agent.yaml
-RETRIEVER_CONFIG=/absolute/or/working-directory-relative/retriever.yaml
-```
+**The embedding and retrieval configurations must agree on provider, model, dimensions, and table columns. Never query vectors with a different model, even when dimensions match.**
 
-or put them into your env
+### Compose defaults
 
-If unset, a locally started backend uses `default_langchain_agent.yaml` and `default_langchain_retriever.yaml`.
+- Development `compose.yaml` selects the VoyageAI retriever, so its database must contain vectors produced by the matching VoyageAI embedder and `VOYAGE_API_KEY` must be set.
+- Production `compose.prod.yaml` selects the legacy retriever for an existing vector table.
+- `compose.yaml` currently injects `EMBEDDER_CONFIG`, but the host-side ingestion script reads `EMBEDDINGS_CONFIG`; pass the latter explicitly when running the script.
 
-**The embedding and retrieval configurations must agree on the provider/model and table columns.** Vectors produced by one model must not be queried with another model, even when their dimensions happen to match.
-
-### Current Compose peculiarity
-
-Both Compose files explicitly select `legacy_langchain_retriever.yaml`. That is for databases containing the older `langchain_pg_embedding` schema. The current embedding script writes the newer `embeddings` table instead. **This distinction will disappear in the future. The new contract mainly adds a chunk_id index and is in part an artifact of an earlier development stage.**
-
-Use the Voyage retriever path instead only when the table was embedded with the matching Voyage model.
+**The current/legacy distinction is transitional. The current contract mainly adds deterministic chunk IDs and explicit indexed columns.**
 
 ## Environment variables
 
@@ -81,74 +71,56 @@ Use the Voyage retriever path instead only when the table was embedded with the 
 
 | Variable | Meaning |
 | --- | --- |
-| `LLM_API_URL` | Base URL of the OpenAI-compatible chat API. |
-| `LLM_MODEL` | Chat-model identifier sent to the provider. |
-| `LLM_API_KEY` | Provider key. The config has an `EMPTY` construction fallback, but a real provider normally requires a key. |
-| `POSTGRES_URL` | psycopg/SQLAlchemy URL used by the session, SQL tools, retriever, and embedding builder. |
+| `LLM_API_URL` | OpenAI-compatible API base URL. |
+| `LLM_MODEL` | Provider model identifier. |
+| `LLM_API_KEY` | Provider key; `EMPTY` is only a construction fallback. |
+| `POSTGRES_URL` | psycopg/SQLAlchemy URL used by sessions, tools, retrievers, and ingestion. |
 
-Compose injects the container-network URL directly as `POSTGRES_URL`:
+Compose sets its internal URL directly:
 
 ```text
 postgresql://scrapyrus:scrapyrus@postgres:5432/scrapyrus
 ```
 
-Host-side tools cannot resolve the Compose service name `postgres`, so `.env.example` also defines the separately named URL for the published development port:
+Host tools cannot resolve `postgres`, so `.env.example` separately provides:
 
 ```dotenv
 POSTGRES_HOST_URL=postgresql://scrapyrus:scrapyrus@127.0.0.1:55432/scrapyrus
 ```
 
-The backend and embedding adapters deliberately continue to consume only `POSTGRES_URL`. When running them on the host, explicitly pass the host URL as `POSTGRES_URL`, for example `POSTGRES_URL="$POSTGRES_HOST_URL" ...` after exporting or sourcing `POSTGRES_HOST_URL`.
+The application only reads `POSTGRES_URL`. For host commands, explicitly map the host value: `POSTGRES_URL="$POSTGRES_HOST_URL" ...`.
 
-### Embedding-provider values
+### Provider and application values
 
-| Variable | When needed |
+| Variable | Use/default |
 | --- | --- |
-| `EMBEDDINGS_CONFIG` | Required by `backend/scripts/compute_embeddings.py`; points to an embedder YAML file. |
-| `HF_TOKEN` | Optional/required for gated Hugging Face models and authenticated downloads. Compose passes it and preserves the Hugging Face cache in a named volume. |
-| `VOYAGE_API_KEY` | Required by the VoyageAI configurations. Compose passes it from the root environment when set. |
+| `HF_TOKEN` | Optional/required for gated Hugging Face models; Compose preserves the HF cache. |
+| `VOYAGE_API_KEY` | Required by VoyageAI configurations and development Compose. |
+| `BACKEND_HOST`, `BACKEND_PORT`, `BACKEND_RELOAD` | `0.0.0.0`, `3001`, and optional Uvicorn reload. |
+| `CORS_ORIGIN`, `VITE_API_URL` | Browser origins and frontend API URL; development defaults are `http://localhost:5173` and `http://localhost:3001`. |
+| `VITE_WARNING_BANNER_TEXT` | Optional banner above the chat. |
+| `POSTGRES_DATA_DIR` | PostgreSQL storage; default `./data/postgres`. |
+| `POSTGRES_HOST_URL` | Host-side development URL; not read automatically by the backend. |
+| `BACKEND_HEALTH_START_PERIOD` | Compose readiness grace period; default 15 minutes for model downloads. |
+| `PROD_VITE_API_URL` | Production frontend API URL; default `/api`. |
+| `FRONTEND_HTTP_PORT`, `FRONTEND_HTTPS_PORT` | Production ports; defaults `80` and `443`. |
+| `TLS_CERTIFICATE_PATH`, `TLS_PRIVATE_KEY_PATH` | Production PEM certificate chain and private key. |
 
-### Optional application and deployment values
+## Database and embeddings
 
-| Variable | Default/use |
-| --- | --- |
-| `AGENT_CONFIG` | Shipped default agent config. |
-| `RETRIEVER_CONFIG` | Shipped default retriever locally; Compose currently pins the legacy config. |
-| `WORKSPACE_DIR`, `MEMORY_DIR` | Host paths backing the agent's `/workspace` and `/memory` routes. |
-| `BACKEND_HOST` | `0.0.0.0` |
-| `BACKEND_PORT` | `3001` |
-| `BACKEND_RELOAD` | Enables Uvicorn reload for truthy values. |
-| `CORS_ORIGIN` | Comma-separated browser origins; development default is `http://localhost:5173`. |
-| `VITE_API_URL` | Frontend backend URL; development default is `http://localhost:3001`. |
-| `VITE_WARNING_BANNER_TEXT` | Optional banner shown above the chat. |
-| `POSTGRES_DATA_DIR` | `./data/postgres` |
-| `POSTGRES_HOST_URL` | Host-side connection URL for the PostgreSQL port published by development Compose. It is not read automatically by the backend. |
-| `BACKEND_HEALTH_START_PERIOD` | Compose health-check grace period; defaults to 15 minutes because model download can be slow. |
-| `PROD_VITE_API_URL` | `/api` in production. |
-| `FRONTEND_HTTP_PORT`, `FRONTEND_HTTPS_PORT` | `80` and `443`. |
-| `TLS_CERTIFICATE_PATH`, `TLS_PRIVATE_KEY_PATH` | Production nginx certificate and private-key files. |
+The backend does not create the Scrapyrus source schema. PostgreSQL must have pgvector plus the Scrapyrus `transcriptions`, `orig_dates`, and `orig_places` tables used by the ingestion query.
 
-## Database setup
-
-The backend does not create the Scrapyrus source schema. It expects a pgvector-enabled PostgreSQL database populated with Scrapyrus metadata and transcriptions, including the `transcriptions`, `orig_dates`, and `orig_places` tables used by the current embedding query.
-
-### Development database and ingestion
-
-Create `.env`, include the LLM values, then start PostgreSQL. Compose supplies its internal `POSTGRES_URL`; `POSTGRES_HOST_URL` is only for commands run directly on the host.
+### Start and populate development PostgreSQL
 
 ```sh
 cp .env.example .env
 docker compose up -d postgres
-```
 
-Load Scrapyrus data with the one-off management image:
-
-```sh
 docker compose run --build --rm scrapyrus scrapyrus metadata ingest
 docker compose run --build --rm scrapyrus scrapyrus transcriptions ingest
 ```
 
-To ingest from a host `idp.data` checkout:
+To ingest a host `idp.data` checkout:
 
 ```sh
 docker compose run --build --rm \
@@ -156,20 +128,16 @@ docker compose run --build --rm \
   scrapyrus scrapyrus --idp-data /data/idp.data metadata ingest
 ```
 
-The database is exposed only on `127.0.0.1:55432` in development and persisted in `${POSTGRES_DATA_DIR:-./data/postgres}`. The production database is private to the Compose network.
+Development PostgreSQL is exposed only at `127.0.0.1:55432` and stored in `${POSTGRES_DATA_DIR:-./data/postgres}`. Production PostgreSQL is private to its Compose network.
 
-### Current and legacy vector schemas
+### Vector schemas
 
-There are two supported layouts during the transition:
+- **Current:** `embeddings`, created/opened by `LangChainEmbeddings`, with deterministic chunk IDs and explicit content, vector, metadata, source, and transcription-ID columns.
+- **Legacy:** See `Scrapyrus`
 
-- **Current:** `embeddings`, created/opened by `LangChainEmbeddings` using the table contract in the embedder config. It uses deterministic text chunk IDs and explicit content, vector, metadata, source, and transcription-ID columns.
-- **Legacy:** `langchain_pg_embedding`, read through `legacy_langchain_retriever.yaml` for an existing LangChain collection-style database.
+Retrievers only open existing vector tables; they do not create them.
 
-The retriever only opens an existing vector table; it does not create one. Run embedding ingestion before switching to the current retriever.
-
-### Build the current embedding table
-
-Install the backend locally, select the database and embedder configuration, and run the script from `backend/`:
+### Build the current vector table
 
 ```sh
 python -m pip install -e backend
@@ -180,15 +148,9 @@ EMBEDDINGS_CONFIG=configs/default_langchain_embedder.yaml \
 python scripts/compute_embeddings.py
 ```
 
-The default pipeline:
+For VoyageAI, replace the config with `configs/voyage_ai_langchain_embedder.yaml` and export `VOYAGE_API_KEY`.
 
-- reads non-empty transcriptions/translations from Scrapyrus;
-- joins aggregated dates and places;
-- splits text into overlapping chunks;
-- embeds with `Qwen/Qwen3-Embedding-8B`, truncated to 2000 dimensions and normalized;
-- creates/opens the configured `embeddings` table and stores source/transcription metadata with every chunk.
-
-The `vector_size`, model output, and database column must agree. Changing the embedding model, dimensions, splitter, or table contract generally requires rebuilding the vector data and using a matching retriever config.
+The default Qwen pipeline reads non-empty Scrapyrus transcriptions/translations, joins dates and places, chunks text, embeds with `Qwen/Qwen3-Embedding-8B` at 2000 dimensions, and stores source/transcription metadata. Changing the model, dimensions, splitter, or schema generally requires rebuilding the table and selecting the matching retriever.
 
 ## Run locally
 
@@ -196,7 +158,6 @@ The `vector_size`, model output, and database column must agree. Changing the em
 npm install
 python -m pip install -e backend
 cp .env.example .env
-# Export the LLM settings, then map the documented host URL explicitly.
 export POSTGRES_HOST_URL=postgresql://scrapyrus:scrapyrus@127.0.0.1:55432/scrapyrus
 POSTGRES_URL="$POSTGRES_HOST_URL" npm run dev
 ```
@@ -204,20 +165,20 @@ POSTGRES_URL="$POSTGRES_HOST_URL" npm run dev
 - Frontend: <http://localhost:5173>
 - Backend: <http://localhost:3001>
 
-The backend starts its agent, embedding model, retriever, and PostgreSQL connection during application startup. A missing table/configuration or a large first model download therefore delays or fails `/health` readiness.
+Startup initializes the agent, embedding model, retriever, and database connection. A missing table/configuration or first model download delays or fails `/health` readiness.
 
-## Run with Docker Compose
+## Run development Compose
 
 ```sh
 cp .env.example .env
-# Configure the LLM values; Compose supplies the internal POSTGRES_URL.
-npm run docker:up
+# Set the LLM values and VOYAGE_API_KEY.
+docker compose up
 ```
 
 - Frontend: <http://localhost:5173>
 - Backend: <http://localhost:3001>
 
-This uses `compose.yaml` with source bind mounts. The Hugging Face cache survives container recreation. The Scrapyrus tool container is only started for explicit `docker compose run` commands.
+This uses source bind mounts and a persistent Hugging Face cache. The Scrapyrus tool container runs only through explicit `docker compose run` commands.
 
 ## Run production Compose
 
@@ -226,17 +187,17 @@ cp .env.example .env
 npm run docker:prod
 ```
 
-Production uses `compose.prod.yaml`, builds the frontend into nginx, proxies `/api` to the private backend, redirects HTTP to HTTPS, and publishes only the frontend.
+Production builds the frontend into nginx, proxies `/api` to the private backend, redirects HTTP to HTTPS, and publishes only nginx. Provide a PEM certificate chain and private key outside git through `TLS_CERTIFICATE_PATH` and `TLS_PRIVATE_KEY_PATH`.
 
-Provide a PEM certificate chain and private key outside git through `TLS_CERTIFICATE_PATH` and `TLS_PRIVATE_KEY_PATH`. If a provider supplied a PKCS#7 (`.p7b`) chain, convert it first, for example:
+Convert a PKCS#7 chain if needed:
 
 ```sh
 openssl pkcs7 -print_certs -in your-bundle.p7b -out chain.pem
 ```
 
-Add `-inform DER` for a DER-encoded bundle. Concatenate the server certificate first and the remaining chain afterward into the file referenced by `TLS_CERTIFICATE_PATH`.
+Add `-inform DER` for DER input. Put the server certificate first, followed by the remaining chain.
 
-Production is not hardened for public or multi-user deployment; review the limitations above first.
+**Production is not hardened for public or multi-user deployment; review the limitations above before deployment.**
 
 ## Tests
 
@@ -246,4 +207,4 @@ python -m pip install -e ".[tests]"
 python -m pytest
 ```
 
-The default command excludes `integration` and `live_model` tests and enforces 90% global branch coverage. The real-service integration lane remains planned rather than implemented.
+The default suite excludes `integration` and `live_model` markers and enforces 90% global branch coverage.
