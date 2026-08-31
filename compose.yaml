@@ -50,7 +50,8 @@ services:
       POSTGRES_URL: postgresql://scrapyrus:scrapyrus@postgres:5432/scrapyrus
       HF_TOKEN: ${HF_TOKEN:-}
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
-      AGENT_CONFIG: /app/backend/configs/voyage_ai_langchain_embedder.yaml
+      AGENT_CONFIG:  /app/backend/configs/default_langchain_agent.yaml
+      EMBEDDER_CONFIG: /app/backend/configs/voyage_ai_langchain_embedder.yaml
       RETRIEVER_CONFIG: /app/backend/configs/voyage_ai_langchain_retriever.yaml
       PYTHONPATH: /app/backend/src
     volumes:
