@@ -1,28 +1,46 @@
 embeddings:
-  type: langchain_huggingface.HuggingFaceEmbeddings
+  type: langchain_voyageai.VoyageAIEmbeddings
   kwargs:
-    model_name: Qwen/Qwen3-Embedding-8B
-    model_kwargs:
-      truncate_dim: 2000
-    encode_kwargs:
-      normalize_embeddings: True
+    voyage_api_key: ${VOYAGE_API_KEY}
+    model: voyage-4-large
+    output_dimension: &embedding_dim 1024
+    batch_size: 64
 
-# Read the PGVector collection schema produced by the previous ingestion
-# pipeline. Its UUID-valued `id` is an opaque retrieval identifier, not the
-# deterministic `chunk_id` used by the current embedding pipeline.
+# Read Scrapyrus transcription embeddings directly. Scrapyrus stores multiple
+# models in this table, so every search must remain scoped to the matching model.
 store_kwargs:
-  table_name: langchain_pg_embedding
+  table_name: transcription_embeddings
   schema_name: public
-  content_column: document
+  vector_size: *embedding_dim
+  content_column: document_text
   embedding_column: embedding
   id_column:
-    name: id
-    data_type: TEXT
+    name: xml_id
+    data_type: BIGINT
     nullable: false
-  metadata_columns: []
-  metadata_json_column: cmetadata
+  metadata_columns:
+    - name: model_name
+      data_type: TEXT
+      nullable: false
+    - name: chunk_index
+      data_type: INTEGER
+      nullable: false
+    - name: source_path
+      data_type: TEXT
+      nullable: false
+    - name: tm_id
+      data_type: TEXT
+      nullable: false
+    - name: language
+      data_type: TEXT
+      nullable: true
+  metadata_json_column: null
 
 similarity_search_kwargs:
   k: 1
+  filter:
+    model_name: voyage-4-large
 mmr_search_kwargs:
   k: 4
+  filter:
+    model_name: voyage-4-large

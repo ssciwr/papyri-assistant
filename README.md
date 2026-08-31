@@ -49,7 +49,7 @@ YAML `type` values are imported and constructed at runtime. `${VARIABLE}` and `$
 | `backend/configs/default_langchain_agent.yaml` | Model, prompt, tools, middleware, interrupts, filesystem permissions, and Deep Agents backends. |
 | `backend/configs/default_langchain_embedder.yaml` | Qwen3 embedding model, splitter, and current `embeddings` table contract. |
 | `backend/configs/default_langchain_retriever.yaml` | Qwen3 retriever for the current `embeddings` table. **IF YOU USE A DATABASE WITH EMBEDDINGS BUILT VIA `scripts/compute_embeddings.py` WITH `default_langchain_embedder.yaml`, USE THIS ONE.** |
-| `backend/configs/legacy_langchain_retriever.yaml` | Existing Scrapyrus/LangChain table. **IF YOU USE A DATABASE WITH SCRAPYRUS-BUILT EMBEDDINGS, USE THIS ONE.** |
+| `backend/configs/legacy_langchain_retriever.yaml` | VoyageAI retriever for Scrapyrus `transcription_embeddings`, mapped directly to Scrapyrus columns and filtered to `voyage-4-large`. **IF YOU USE A DATABASE WITH SCRAPYRUS-BUILT VOYAGEAI EMBEDDINGS, USE THIS ONE. CURRENTLY UNTESTED.** |
 | `backend/configs/voyage_ai_langchain_embedder.yaml` | VoyageAI `voyage-4-large` ingestion with 1024-dimensional vectors. |
 | `backend/configs/voyage_ai_langchain_retriever.yaml` | Matching VoyageAI retriever for the current `embeddings` table. **IF YOU USE A DATABASE WITH EMBEDDINGS BUILT VIA `scripts/compute_embeddings.py` WITH `voyage_ai_langchain_embedder.yaml`, USE THIS ONE.** |
 
@@ -59,11 +59,12 @@ The config files used can be overridden in the compose files. Per default, the `
 
 ### Compose defaults
 
-- Development `compose.yaml` selects the VoyageAI retriever, so its database must contain vectors produced by the matching VoyageAI embedder and `VOYAGE_API_KEY` must be set.
-- Production `compose.prod.yaml` selects the legacy retriever for an existing vector table.
+- Development `compose.yaml` selects `voyage_ai_langchain_retriever.yaml`, which reads the Papyri Assistant `embeddings` table.
+- Production `compose.prod.yaml` selects `legacy_langchain_retriever.yaml`, which reads Scrapyrus `transcription_embeddings` directly.
+- Both VoyageAI paths require `VOYAGE_API_KEY` and vectors created with `voyage-4-large` at 1024 dimensions.
 - `compose.yaml` currently injects `EMBEDDER_CONFIG`, but the host-side ingestion script reads `EMBEDDINGS_CONFIG`; pass the latter explicitly when running the script.
 
-**The current/legacy distinction is transitional. The current contract mainly adds deterministic chunk IDs and explicit indexed columns.**
+**The current retriever can query only one embedding table at a time because one configuration creates one `PGVectorStore`. The shipped Scrapyrus config queries `transcription_embeddings`; change its `table_name` to `translation_embeddings` to query translations instead. Both tables cannot be queried concurrently by the current backend. This is a temporary limitation and will change in the future (tracked [here](https://github.com/ssciwr/papyri-assistant/issues/21))**
 
 ## Environment variables
 
@@ -132,10 +133,10 @@ Development PostgreSQL is exposed only at `127.0.0.1:55432` and stored in `${POS
 
 ### Vector schemas
 
-- **Current:** `embeddings`, created/opened by `LangChainEmbeddings`, with deterministic chunk IDs and explicit content, vector, metadata, source, and transcription-ID columns.
-- **Legacy:** See `Scrapyrus`
+- **Papyri Assistant:** `embeddings`, created by `LangChainEmbeddings`, with deterministic chunk IDs and explicit content, vector, metadata, source, and transcription-ID columns. The default and VoyageAI retriever configs target this table with their matching models.
+- **Scrapyrus:** `transcription_embeddings` and `translation_embeddings`. Each row contains `xml_id`, `model_name`, `chunk_index`, `source_path`, `tm_id`, `language`, `document_text`, `input_hash`, `embedding`, and `updated_at`. `legacy_langchain_retriever.yaml` directly maps LangChain to `transcription_embeddings` and filters retrieval to `voyage-4-large`.
 
-Retrievers only open existing vector tables; they do not create them.
+Retrievers only open existing vector tables; they do not create them. **Only one of the Scrapyrus embedding tables can be selected at a time with the current single-retriever backend.**
 
 ### Build the current vector table
 

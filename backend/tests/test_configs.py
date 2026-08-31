@@ -130,22 +130,38 @@ def test_retriever_config_loads() -> None:
     assert config["similarity_search_kwargs"] == {"k": 1}
 
 
-def test_legacy_retriever_config_maps_the_existing_collection_schema() -> None:
+def test_legacy_retriever_config_maps_the_scrapyrus_schema(voyage_env) -> None:
     config = utils.load_config(LEGACY_RETRIEVER_CONFIG)
 
     assert callable(config["embeddings"]["type"])
+    assert config["embeddings"]["kwargs"]["model"] == "voyage-4-large"
     assert config["store_kwargs"] == {
-        "table_name": "langchain_pg_embedding",
+        "table_name": "transcription_embeddings",
         "schema_name": "public",
-        "content_column": "document",
+        "vector_size": 1024,
+        "content_column": "document_text",
         "embedding_column": "embedding",
         "id_column": {
-            "name": "id",
-            "data_type": "TEXT",
+            "name": "xml_id",
+            "data_type": "BIGINT",
             "nullable": False,
         },
-        "metadata_columns": [],
-        "metadata_json_column": "cmetadata",
+        "metadata_columns": [
+            {"name": "model_name", "data_type": "TEXT", "nullable": False},
+            {"name": "chunk_index", "data_type": "INTEGER", "nullable": False},
+            {"name": "source_path", "data_type": "TEXT", "nullable": False},
+            {"name": "tm_id", "data_type": "TEXT", "nullable": False},
+            {"name": "language", "data_type": "TEXT", "nullable": True},
+        ],
+        "metadata_json_column": None,
+    }
+    assert config["similarity_search_kwargs"] == {
+        "k": 1,
+        "filter": {"model_name": "voyage-4-large"},
+    }
+    assert config["mmr_search_kwargs"] == {
+        "k": 4,
+        "filter": {"model_name": "voyage-4-large"},
     }
 
 
