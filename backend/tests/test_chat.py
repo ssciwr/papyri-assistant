@@ -1,155 +1,139 @@
+"""Cover the chat layer: which agent answers, and what happens when it fails."""
+
 from __future__ import annotations
 
 import asyncio
-import sys
-import types
-from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from papyri_backend import chat
-from papyri_backend.utils.messages import NormalizedMessage
-
-
-def test_provider_kwargs_requires_api_key(monkeypatch) -> None:
-    monkeypatch.delenv("LLM_API_KEY", raising=False)
-
-    with pytest.raises(ValueError, match="Set LLM_API_KEY"):
-        chat._provider_kwargs()
+from papyri_backend import chat, session
+from papyri_backend.exceptions import InvalidDecision, StaleDecision
 
 
-def test_provider_kwargs_includes_optional_base_url(monkeypatch) -> None:
-    monkeypatch.setenv("LLM_API_KEY", "test-key")
-    monkeypatch.setenv("LLM_API_URL", "https://example.test/v1")
+class FakeAgent:
+    def __init__(self, answer=None, error=None):
+        self.answer = answer or {"text": "hi", "reasoning": "", "interrupt": None}
+        self.error = error
+        self.seen = []
 
-    assert chat._provider_kwargs() == {
-        "api_key": "test-key",
-        "base_url": "https://example.test/v1",
-    }
+    def run_single_turn(self, message):
+        self.seen.append(message)
+        if self.error is not None:
+            raise self.error
+        return self.answer
+
+
+class FakeConnection:
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+def use(monkeypatch, agent) -> FakeConnection:
+    """Install a session backed by the given fake agent."""
+    connection = FakeConnection()
+    fake = session.Session(
+        agent=cast(Any, agent),
+        retriever=cast(Any, object()),
+        connection=cast(Any, connection),
+    )
+    monkeypatch.setattr(session, "_CURRENT", fake)
+    return connection
+
+
+def message(text: str) -> dict:
+    return {"role": "user", "content": [{"type": "text", "text": text}]}
+
+
+def test_only_the_latest_message_reaches_the_agent(monkeypatch) -> None:
+    # The conversation lives in the agent's checkpointer, so resending the
+    # history would replay it rather than continue it.
+    agent = FakeAgent()
+    use(monkeypatch, agent)
+
+    asyncio.run(chat.answer_with_chat([message("first"), message("second")]))
+
+    assert agent.seen == [message("second")]
+
+
+def test_the_agents_answer_is_returned_unchanged(monkeypatch) -> None:
+    answer = {"text": "hello", "reasoning": "thinking", "interrupt": None}
+    use(monkeypatch, FakeAgent(answer=answer))
+
+    assert asyncio.run(chat.answer_with_chat([message("hi")])) == answer
 
 
 @pytest.mark.parametrize(
-    ("role", "expected_type"),
-    [
-        ("assistant", AIMessage),
-        ("system", SystemMessage),
-        ("user", HumanMessage),
-    ],
+    "error",
+    [StaleDecision("no decision pending"), InvalidDecision("decision not allowed")],
 )
-def test_to_langchain_message_uses_role_specific_classes(role, expected_type) -> None:
-    converted = chat._to_langchain_message(
-        NormalizedMessage(role=role, content="Hello")
-    )
+def test_a_refused_decision_is_raised_for_the_transport(monkeypatch, error) -> None:
+    # A decision-protocol error carries a status code, not agent output, so it
+    # must not be flattened into a chat answer.
+    use(monkeypatch, FakeAgent(error=error))
 
-    assert isinstance(converted, expected_type)
-    assert converted.content == "Hello"
-
-
-def test_find_last_user_message_index() -> None:
-    messages = [
-        NormalizedMessage(role="system", content="Rules"),
-        NormalizedMessage(role="user", content="First"),
-        NormalizedMessage(role="assistant", content="Reply"),
-        NormalizedMessage(role="user", content="Second"),
-    ]
-
-    assert chat._find_last_user_message_index(messages) == 3
-    assert chat._find_last_user_message_index(messages[:1]) == -1
+    with pytest.raises(type(error)):
+        asyncio.run(chat.answer_with_chat([message("{}")]))
 
 
-def test_stringify_model_content_handles_strings_lists_and_mappings() -> None:
-    assert chat._stringify_model_content("plain") == "plain"
-    assert (
-        chat._stringify_model_content(
-            [
-                {"text": "one"},
-                {"content": "two"},
-                {"ignored": "value"},
-                "three",
-            ]
-        )
-        == "one\ntwo\nthree"
-    )
-    assert chat._stringify_model_content(123) == "123"
+def test_an_empty_conversation_is_reported_as_a_chat_error(monkeypatch) -> None:
+    use(monkeypatch, FakeAgent())
+
+    answer = asyncio.run(chat.answer_with_chat([]))
+
+    assert answer["text"].startswith("Exception happened in chat:")
+    assert answer["reasoning"] == ""
+    assert answer["interrupt"] is None
+    assert session._CURRENT is None
 
 
-def test_answer_with_chat_requires_a_user_message() -> None:
-    with pytest.raises(ValueError, match="No user message found"):
-        asyncio.run(
-            chat.answer_with_chat(
-                [
-                    {"role": "system", "content": "Rules"},
-                    {"role": "assistant", "content": "Reply"},
-                ]
-            )
-        )
+@pytest.mark.parametrize(
+    "raw_message",
+    [{}, {"content": []}, {"content": [{}]}],
+    ids=["missing-content", "empty-content", "missing-text"],
+)
+def test_malformed_last_messages_are_forwarded_to_the_agent(
+    monkeypatch, raw_message
+) -> None:
+    agent = FakeAgent()
+    use(monkeypatch, agent)
+
+    answer = asyncio.run(chat.answer_with_chat([raw_message]))
+
+    assert answer == agent.answer
+    assert agent.seen == [raw_message]
 
 
-def test_answer_with_chat_sends_context_window_to_model(monkeypatch) -> None:
-    class FakeChatOpenAI:
-        instances: list["FakeChatOpenAI"] = []
+def test_a_failed_run_is_reported_as_chat_output(monkeypatch) -> None:
+    use(monkeypatch, FakeAgent(error=RuntimeError("provider exploded")))
 
-        def __init__(self, **kwargs: object) -> None:
-            self.kwargs = kwargs
-            self.instances.append(self)
+    answer = asyncio.run(chat.answer_with_chat([message("hi")]))
 
-    class FakeMessagesPlaceholder:
-        def __init__(self, variable_name: str) -> None:
-            self.variable_name = variable_name
+    assert "provider exploded" in answer["text"]
+    # The shape has to match a successful answer, because the client reads the
+    # same fields either way.
+    assert set(answer) == {"text", "reasoning", "interrupt"}
 
-    class FakeChain:
-        payload: dict[str, object] | None = None
 
-        def __init__(self, model: FakeChatOpenAI) -> None:
-            self.model = model
+def test_a_failed_run_drops_the_session(monkeypatch) -> None:
+    # A failed run can leave the graph in a state the next turn cannot resume
+    # from, so the next request starts a fresh agent rather than reusing it.
+    connection = use(monkeypatch, FakeAgent(error=RuntimeError("boom")))
 
-        async def ainvoke(self, payload: dict[str, object]) -> SimpleNamespace:
-            self.payload = payload
-            FakeChain.payload = payload
-            return SimpleNamespace(
-                content=[{"text": "answer"}, {"content": "extra"}, "tail"]
-            )
+    asyncio.run(chat.answer_with_chat([message("hi")]))
 
-    class FakePrompt:
-        created_messages: list[object] | None = None
+    assert session._CURRENT is None
+    assert connection.close_calls == 1
 
-        @classmethod
-        def from_messages(cls, messages: list[object]) -> "FakePrompt":
-            cls.created_messages = messages
-            return cls()
 
-        def __or__(self, model: FakeChatOpenAI) -> FakeChain:
-            return FakeChain(model)
+def test_new_agent_starts_a_session(monkeypatch) -> None:
+    started = []
+    monkeypatch.setattr(session, "start", lambda: started.append(True))
 
-    fake_langchain_openai = types.ModuleType("langchain_openai")
-    fake_langchain_openai.ChatOpenAI = FakeChatOpenAI
+    answer = chat.new_agent()
 
-    monkeypatch.setitem(sys.modules, "langchain_openai", fake_langchain_openai)
-    monkeypatch.setattr(chat, "ChatPromptTemplate", FakePrompt)
-    monkeypatch.setattr(chat, "MessagesPlaceholder", FakeMessagesPlaceholder)
-    monkeypatch.setenv("LLM_API_KEY", "test-key")
-    monkeypatch.setenv("LLM_API_URL", "https://example.test/v1")
-    monkeypatch.setenv("LLM_MODEL", "test-model")
-
-    result = asyncio.run(
-        chat.answer_with_chat(
-            [{"role": "user", "content": f"message {index}"} for index in range(12)]
-        )
-    )
-
-    assert result == {"text": "answer\nextra\ntail"}
-    assert FakeChatOpenAI.instances[0].kwargs == {
-        "model": "test-model",
-        "temperature": 0.2,
-        "api_key": "test-key",
-        "base_url": "https://example.test/v1",
-    }
-    assert FakePrompt.created_messages is not None
-    assert FakePrompt.created_messages[0] == ("system", chat._DEFAULT_SYSTEM_PROMPT)
-    assert isinstance(FakePrompt.created_messages[1], FakeMessagesPlaceholder)
-    assert FakePrompt.created_messages[1].variable_name == "messages"
-    assert FakeChain.payload is not None
-    assert [message.content for message in FakeChain.payload["messages"]] == [
-        f"message {index}" for index in range(3, 12)
-    ]
+    assert started == [True]
+    assert answer["text"]

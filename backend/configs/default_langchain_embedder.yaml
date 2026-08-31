@@ -1,0 +1,33 @@
+embeddings:
+  type: langchain_huggingface.HuggingFaceEmbeddings
+  kwargs:
+    model_name: Qwen/Qwen3-Embedding-8B
+    model_kwargs:
+      truncate_dim: &embedding_dim 2000 # max size that pgvector can index fully by default
+    encode_kwargs:
+      normalize_embeddings: True
+      batch_size: 2
+splitter_kwargs:
+  chunk_size: 1000
+  chunk_overlap: 200
+
+# The schema for the PGVectorStore table. The retriever will use this same
+# contract when it moves from the legacy PGVector collection store.
+store_kwargs:
+  table_name: embeddings
+  schema_name: public
+  vector_size: *embedding_dim
+  content_column: content
+  embedding_column: embedding
+  id_column:
+    name: chunk_id
+    data_type: TEXT
+    nullable: false
+  metadata_columns:
+    - name: source
+      data_type: TEXT
+      nullable: false
+    - name: transcription_id
+      data_type: TEXT
+      nullable: false
+  metadata_json_column: metadata

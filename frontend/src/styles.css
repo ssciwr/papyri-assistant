@@ -116,6 +116,28 @@ textarea {
   opacity: 0.45;
 }
 
+.new-session-button {
+  height: 38px;
+  padding: 0 14px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #b4532a;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.new-session-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.new-session-button:focus-visible {
+  outline: 3px solid rgba(180, 83, 42, 0.25);
+  outline-offset: 2px;
+}
+
 .status-pill {
   flex: 0 0 auto;
   padding: 6px 10px;
@@ -456,4 +478,146 @@ textarea {
   .send-button {
     width: 100%;
   }
+}
+
+.decision-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.decision-summary-item {
+  margin: 0;
+  /* Inherited, not fixed: user bubbles are white on dark, assistant ones the
+     reverse, and a hardcoded colour disappears into one of them. */
+  color: inherit;
+  font-size: 0.9rem;
+}
+
+.decision-summary-type {
+  /* Decisions arrive as lowercase tokens; the casing is display-only. */
+  text-transform: capitalize;
+  font-weight: 700;
+}
+
+.decision-summary-message {
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.decision-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(31, 41, 55, 0.45);
+}
+
+.decision-dialog {
+  width: 100%;
+  max-width: 420px;
+  /* Several paused actions with prefilled edit bodies can outgrow the viewport. */
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid #ddd6c8;
+  border-radius: 8px;
+  background: #fffdf8;
+  box-shadow: 0 12px 32px rgba(31, 41, 55, 0.22);
+}
+
+.decision-title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.decision-action {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #ece5d8;
+}
+
+.decision-action:first-of-type {
+  padding-top: 0;
+  border-top: none;
+}
+
+.decision-action-name {
+  margin: 0;
+  color: #4b5563;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.decision-action-args {
+  max-height: 160px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid #d8d1c4;
+  border-radius: 6px;
+  background: #fbfaf6;
+  color: #4b5563;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.decision-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.decision-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #d8d1c4;
+  border-radius: 6px;
+  background: #fbfaf6;
+  cursor: pointer;
+  font-size: 0.94rem;
+}
+
+/* Decisions arrive as lowercase tokens ("approve"); the casing is display-only. */
+.decision-option span {
+  text-transform: capitalize;
+}
+
+.decision-message {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d8d1c4;
+  border-radius: 6px;
+  background: #ffffff;
+  resize: vertical;
+}
+
+.decision-submit {
+  align-self: flex-end;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #b4532a;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.decision-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
