@@ -51,10 +51,10 @@ Configuration is YAML-based. Import paths under `type` are resolved and construc
 | --- | --- |
 | `backend/configs/default_langchain_agent.yaml` | Chat model, system prompt, tools, middleware, interrupts, filesystem permissions, and Deep Agents backends. |
 | `backend/configs/default_langchain_embedder.yaml` | Hugging Face Qwen3 embedding model, text splitter, and the current `embeddings` table contract. |
-| `backend/configs/default_langchain_retriever.yaml` | Retriever matching the current Hugging Face embedder and `embeddings` table. |
-| `backend/configs/legacy_langchain_retriever.yaml` | Compatibility mapping for an existing LangChain collection table named `langchain_pg_embedding` which has been built with the scarpyrus project. |
+| `backend/configs/default_langchain_retriever.yaml` | Retriever matching the current Hugging Face embedder and `embeddings` table.  **IF YOU USE A DATABASE WITH EMBEDDINGS BUILT VIA `scripts/compute_embeddings.py` WITH `default_langchain_embedder.yaml`, USE THIS ONE** |
+| `backend/configs/legacy_langchain_retriever.yaml` | Compatibility mapping for an existing LangChain collection table named `langchain_pg_embedding` which has been built with the scarpyrus project. **IF YOU USE A DATABASE WITH SCRAPYRUS BUILT EMBEDDINGS, USE THIS ONE**|
 | `backend/configs/voyage_ai_langchain_embedder.yaml` | VoyageAI `voyage-4-large` ingestion configured for 1024-dimensional vectors. |
-| `backend/configs/voyage_ai_langchain_retriever.yaml` | Matching VoyageAI retriever for the current `embeddings` table. |
+| `backend/configs/voyage_ai_langchain_retriever.yaml` | Matching VoyageAI retriever for the current `embeddings` table. he current Hugging Face embedder and `embeddings` table.  **IF YOU USE A DATABASE WITH EMBEDDINGS BUILT VIA `scripts/compute_embeddings.py` WITH `voyage_ai_langchain_embedder.yaml`, USE THIS ONE** |
 
 Override the server defaults with:
 
@@ -62,6 +62,8 @@ Override the server defaults with:
 AGENT_CONFIG=/absolute/or/working-directory-relative/agent.yaml
 RETRIEVER_CONFIG=/absolute/or/working-directory-relative/retriever.yaml
 ```
+
+or put them into your env
 
 If unset, a locally started backend uses `default_langchain_agent.yaml` and `default_langchain_retriever.yaml`.
 
