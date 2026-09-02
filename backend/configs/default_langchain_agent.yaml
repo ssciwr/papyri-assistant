@@ -82,6 +82,11 @@ permissions:
       operations: ["write"]
       paths: ["/app/logs"]
       mode: "deny"
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["read", "write"]
+      paths: ["/large_tool_results"]
+      mode: "allow"
 
 # Routes backends by directory. The default is in-state, so files live in graph
 # state and "execute" returns an error until a sandbox backend is set.
