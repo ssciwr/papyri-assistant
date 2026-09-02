@@ -3,7 +3,7 @@
 import json
 import re
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, get_args
@@ -46,6 +46,29 @@ def split_think(text: str) -> tuple[str, str]:
     return reasoning, text[close_tag.end() :]
 
 
+def split_streamed_think(
+    text: str, *, assume_prefilled: bool = False
+) -> tuple[str, str]:
+    """Classify partial inline reasoning before its closing tag arrives.
+
+    ``assume_prefilled`` is for reasoning models whose chat template consumes
+    the opening ``<think>`` tag. Their output must be treated as reasoning from
+    its first token; otherwise it briefly streams as answer text and jumps into
+    the reasoning panel only when the closing tag arrives.
+    """
+    if _THINK_CLOSE.search(text) is not None:
+        return split_think(text)
+
+    open_tag = _THINK_OPEN.search(text)
+    if open_tag is not None and not text[: open_tag.start()].strip():
+        return text[open_tag.end() :], ""
+
+    if assume_prefilled:
+        return text, ""
+
+    return "", text
+
+
 @dataclass
 class TurnOutput:
     """What one turn produced, as the client will read it."""
@@ -53,6 +76,15 @@ class TurnOutput:
     answer: str = ""
     reasoning: str = ""
     error: str = ""
+
+    def add_tool_calls(self, tool_calls: list[dict[str, Any]]) -> None:
+        """Add finalized tool calls to the reasoning trace."""
+        for tool_call in tool_calls or []:
+            args = tool_call.get("args") or {}
+            body = "\n".join(f"{k}: {v}" for k, v in args.items())
+            self.reasoning += (
+                f"\n\n````\nUsing tool: {tool_call.get('name')}\n{body}\n````\n\n"
+            )
 
     def add_message(
         self, text: str, reasoning: str, tool_calls: list[dict[str, Any]]
@@ -68,12 +100,21 @@ class TurnOutput:
         self.reasoning += reasoning + inline_reasoning
         self.answer += answer
 
-        for tool_call in tool_calls or []:
-            args = tool_call.get("args") or {}
-            body = "\n".join(f"{k}: {v}" for k, v in args.items())
-            self.reasoning += (
-                f"\n\n````\nUsing tool: {tool_call.get('name')}\n{body}\n````\n\n"
-            )
+        self.add_tool_calls(tool_calls)
+
+    def as_update(
+        self, *, done: bool, interrupt: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Render a cumulative snapshot for an HTTP response stream."""
+        if done:
+            answer = self.as_answer(interrupt)
+        else:
+            answer = {
+                "text": self.error or self.answer,
+                "reasoning": self.reasoning,
+                "interrupt": None,
+            }
+        return {**answer, "done": done}
 
     def as_answer(self, interrupt: dict[str, Any] | None) -> dict[str, Any]:
         """Render the turn as the chat response.
@@ -114,10 +155,15 @@ class LangChainAgent:
         """
         return cls(**utils.load_config(path))
 
-    def __init__(self, **agent_kwargs: Any):
+    def __init__(
+        self, *, inline_reasoning: bool | None = None, **agent_kwargs: Any
+    ):
         """Build a deep agent.
 
         Args:
+            inline_reasoning: Treat untagged text before ``</think>`` as a
+                reasoning trace. When omitted, Qwen models are detected by
+                name; set it explicitly for other model families.
             agent_kwargs: Keyword arguments for ``create_deep_agent``, such as
                 ``model``, ``tools``, ``system_prompt`` and ``interrupt_on``.
                 Nested ``{"type": ..., "kwargs": {...}}`` entries are
@@ -131,6 +177,14 @@ class LangChainAgent:
         # that run a model of their own. Building everything in one pass would
         # instead offer the model to its own constructor.
         model = utils.build(agent_kwargs.get("model"))
+        model_name = getattr(model, "model_name", None) or getattr(
+            model, "model", ""
+        )
+        self.inline_reasoning = (
+            "qwen" in str(model_name).lower()
+            if inline_reasoning is None
+            else inline_reasoning
+        )
         agent_kwargs = {
             key: value if key == "model" else utils.build(value, {"model": model})
             for key, value in agent_kwargs.items()
@@ -340,6 +394,90 @@ class LangChainAgent:
                 str(message.text), str(message.reasoning), message.tool_calls.get()
             )
 
+    def _stream_drive(self, payload: Any, turn: TurnOutput) -> Iterator[dict[str, Any]]:
+        """Drive one graph run and yield cumulative output after every delta.
+
+        LangGraph's v3 ``messages`` projection contains one live stream per
+        model call. Iterating its raw events keeps reasoning and text in
+        provider order; converting either typed projection directly to ``str``
+        would first drain it and lose HTTP streaming.
+        """
+        run = self.agent.stream_events(payload, config=self._config, version="v3")
+        for message in run.messages:
+            answer_before_message = turn.answer
+            reasoning_before_message = turn.reasoning
+            streamed_text = ""
+            streamed_reasoning = ""
+            for kind, delta in self._message_deltas(message):
+                if kind == "reasoning":
+                    streamed_reasoning += delta
+                else:
+                    streamed_text += delta
+
+                # Inline <think> models report their trace through the text
+                # projection. Re-evaluating the current model message on each
+                # delta also handles a closing tag split across chunks. A
+                # separately reported reasoning stream makes the text
+                # projection unambiguously answer text.
+                if streamed_reasoning:
+                    inline_reasoning, answer = "", streamed_text
+                else:
+                    inline_reasoning, answer = split_streamed_think(
+                        streamed_text,
+                        assume_prefilled=getattr(self, "inline_reasoning", False),
+                    )
+                turn.answer = answer_before_message + answer
+                turn.reasoning = (
+                    reasoning_before_message + streamed_reasoning + inline_reasoning
+                )
+                yield turn.as_update(done=False)
+
+            tool_calls = message.tool_calls.get()
+            if tool_calls:
+                turn.add_tool_calls(tool_calls)
+                yield turn.as_update(done=False)
+
+    @staticmethod
+    def _message_deltas(message: Any) -> Iterator[tuple[str, str]]:
+        """Yield interleaved reasoning/text deltas from one model message.
+
+        Real v3 message streams expose their raw protocol events through
+        iteration. Consuming those events preserves provider order, unlike
+        draining the reasoning and text projections one after another. The
+        projection fallback keeps lightweight graph fakes and transitional
+        stream implementations compatible.
+        """
+        try:
+            events = iter(message)
+        except TypeError:
+            for delta in message.reasoning:
+                yield "reasoning", str(delta)
+            for delta in message.text:
+                yield "text", str(delta)
+            return
+
+        for event in events:
+            if event.get("event") != "content-block-delta":
+                continue
+            delta = event.get("delta") or event.get("content_block") or {}
+            delta_type = delta.get("type")
+            if delta_type == "reasoning-delta":
+                text = delta.get("reasoning", "")
+                if text:
+                    yield "reasoning", str(text)
+            elif delta_type == "text-delta":
+                text = delta.get("text", "")
+                if text:
+                    yield "text", str(text)
+            elif delta_type == "reasoning":
+                text = delta.get("reasoning", "")
+                if text:
+                    yield "reasoning", str(text)
+            elif delta_type == "text":
+                text = delta.get("text", "")
+                if text:
+                    yield "text", str(text)
+
     @staticmethod
     def _as_decision(text: str) -> dict[str, Any] | None:
         """Read a message as a decision reply, if that is what it is.
@@ -387,9 +525,24 @@ class LangChainAgent:
             StaleDecision: The message answered an interrupt that is not pending.
             InvalidDecision: The decision was malformed or is not allowed.
         """
+        final = None
+        for update in self.stream_single_turn(message):
+            final = update
+
+        # Every stream emits exactly one terminal snapshot, including empty
+        # and failed runs.
+        assert final is not None
+        return {key: final[key] for key in ("text", "reasoning", "interrupt")}
+
+    def stream_single_turn(self, message) -> Iterator[dict[str, Any]]:
+        """Stream one turn as cumulative text/reasoning snapshots.
+
+        Decision validation happens before the iterator is returned. This is
+        important for HTTP: stale or invalid decisions can still receive their
+        409/422 status before streaming response headers have been sent.
+        """
         text = message["content"][0]["text"]
         decision = self._as_decision(text)
-        turn = TurnOutput()
 
         if decision is not None:
             # Raised before the run is touched, so a refused decision leaves
@@ -398,18 +551,23 @@ class LangChainAgent:
         else:
             payload = {"messages": [{"role": "user", "content": text}]}
 
-        if not turn.error:
-            try:
-                self._drive(payload, turn)
-            except Exception as exc:
-                # Run failures deliberately travel as chat output during local
-                # development.
-                turn.error = f"The agent run failed: {exc}"
+        return self._stream_prepared_turn(payload)
+
+    def _stream_prepared_turn(self, payload: Any) -> Iterator[dict[str, Any]]:
+        turn = TurnOutput()
+
+        try:
+            yield from self._stream_drive(payload, turn)
+        except Exception as exc:
+            # Run failures deliberately travel as chat output during local
+            # development. Because updates are cumulative, this terminal
+            # snapshot replaces any incomplete answer already shown.
+            turn.error = f"The agent run failed: {exc}"
 
         interrupt = self._pending_interrupt()
+        interrupt_view = None
         if interrupt is not None:
             turn.answer += "Please decide how you want to proceed:\n"
+            interrupt_view = self._interrupt_view(interrupt)
 
-        return turn.as_answer(
-            self._interrupt_view(interrupt) if interrupt is not None else None
-        )
+        yield turn.as_update(done=True, interrupt=interrupt_view)

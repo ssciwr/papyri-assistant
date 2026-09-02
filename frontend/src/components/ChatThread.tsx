@@ -1,5 +1,9 @@
 import {
+  createContext,
   forwardRef,
+  useContext,
+  useEffect,
+  useState,
   type ComponentProps,
   type ComponentPropsWithoutRef
 } from "react";
@@ -9,12 +13,18 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
-  type ReasoningMessagePartComponent,
+  useAuiState,
+  type EmptyMessagePartComponent,
+  type ReasoningMessagePartProps,
   type TextMessagePartComponent
 } from "@assistant-ui/react";
 import { readDecision, type DecisionReply } from "../decisionGate";
 
 type MarkdownContentProps = ComponentPropsWithoutRef<"div">;
+type MessageContentComponents = NonNullable<
+  ComponentProps<typeof MessagePrimitive.Content>["components"]
+>;
+const StreamReasoningContext = createContext(false);
 
 const MarkdownContent = forwardRef<HTMLDivElement, MarkdownContentProps>(
   ({ children, className, ...props }, ref) => {
@@ -58,6 +68,14 @@ function DecisionSummary({ decisions }: { decisions: DecisionReply[] }) {
 }
 
 const MarkdownText: TextMessagePartComponent = ({ text, status }) => {
+  // assistant-ui adds a synthetic empty text part while a response whose last
+  // real part is reasoning is still running. The reasoning panel already owns
+  // that progress state, so rendering the empty part would leave a stray dot
+  // below the panel before the real answer begins.
+  if (!text.trim() && status.type === "running") {
+    return null;
+  }
+
   // A decision travels as the JSON text of a user message, so it is summarised
   // here rather than rendered as the payload it literally is.
   const decisions = readDecision(text);
@@ -74,35 +92,102 @@ const MarkdownText: TextMessagePartComponent = ({ text, status }) => {
   );
 };
 
-const ReasoningOutput: ReasoningMessagePartComponent = ({ text, status }) => (
-  <details className="reasoning-output">
-    <summary className="reasoning-summary">Reasoning</summary>
-    <div className="reasoning-content">
-      <MarkdownContent>{text}</MarkdownContent>
-      {status.type === "running" && <StreamingIndicator />}
-    </div>
-  </details>
-);
+function ReasoningOutput({
+  text,
+  status
+}: ReasoningMessagePartProps) {
+  const streamReasoning = useContext(StreamReasoningContext);
+  const isReasoningRunning = status.type === "running";
+  const isResponseRunning = useAuiState(
+    (state) => state.message.status?.type === "running"
+  );
+
+  return (
+    <ReasoningBox
+      initiallyOpen={streamReasoning}
+      isReasoningRunning={isReasoningRunning}
+      isResponseRunning={isResponseRunning}
+      text={text}
+    />
+  );
+}
+
+function ReasoningBox({
+  initiallyOpen,
+  isReasoningRunning,
+  isResponseRunning,
+  text
+}: {
+  initiallyOpen: boolean;
+  isReasoningRunning: boolean;
+  isResponseRunning: boolean;
+  text: string;
+}) {
+  const [isOpen, setIsOpen] = useState(initiallyOpen);
+
+  useEffect(() => {
+    if (!isResponseRunning) {
+      setIsOpen(false);
+    }
+  }, [isResponseRunning]);
+
+  return (
+    <details
+      className="reasoning-output"
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+      open={isOpen}
+    >
+      <summary className="reasoning-summary">
+        Reasoning
+        {isResponseRunning && (
+          <span className="reasoning-summary-status"> in progress...</span>
+        )}
+      </summary>
+      <div className="reasoning-content">
+        <MarkdownContent>{text}</MarkdownContent>
+        {isReasoningRunning && <StreamingIndicator />}
+      </div>
+    </details>
+  );
+}
+
+const EmptyReasoning: EmptyMessagePartComponent = ({ status }) => {
+  const streamReasoning = useContext(StreamReasoningContext);
+
+  return status.type === "running" ? (
+    <ReasoningBox
+      initiallyOpen={streamReasoning}
+      isReasoningRunning
+      isResponseRunning
+      text=""
+    />
+  ) : null;
+};
 
 const messageContentComponents = {
+  Empty: EmptyReasoning,
   Text: MarkdownText,
   Reasoning: ReasoningOutput
-} satisfies NonNullable<
-  ComponentProps<typeof MessagePrimitive.Content>["components"]
->;
+} satisfies MessageContentComponents;
 
-export function ChatThread() {
+export function ChatThread({
+  streamReasoning
+}: {
+  streamReasoning: boolean;
+}) {
   return (
-    <ThreadPrimitive.Root className="thread-root">
-      <ThreadPrimitive.Viewport className="thread-viewport">
-        <ThreadPrimitive.Messages>
-          {({ message }) => <ChatMessage role={message.role} />}
-        </ThreadPrimitive.Messages>
-        <ThreadPrimitive.ViewportFooter className="thread-footer">
-          <Composer />
-        </ThreadPrimitive.ViewportFooter>
-      </ThreadPrimitive.Viewport>
-    </ThreadPrimitive.Root>
+    <StreamReasoningContext.Provider value={streamReasoning}>
+      <ThreadPrimitive.Root className="thread-root">
+        <ThreadPrimitive.Viewport className="thread-viewport">
+          <ThreadPrimitive.Messages>
+            {({ message }) => <ChatMessage role={message.role} />}
+          </ThreadPrimitive.Messages>
+          <ThreadPrimitive.ViewportFooter className="thread-footer">
+            <Composer />
+          </ThreadPrimitive.ViewportFooter>
+        </ThreadPrimitive.Viewport>
+      </ThreadPrimitive.Root>
+    </StreamReasoningContext.Provider>
   );
 }
 

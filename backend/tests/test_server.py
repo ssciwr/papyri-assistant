@@ -68,11 +68,20 @@ def test_health_returns_ok() -> None:
 def test_chat_returns_answer(monkeypatch) -> None:
     # The fake stands in for the agent and asserts what it was handed, which is
     # how the test pins that the endpoint forwards the messages unchanged.
-    async def fake_answer_with_chat(messages: list[object]) -> dict[str, str]:
+    def fake_answer_with_chat_stream(messages: list[object]):
         assert messages == [{"role": "user", "content": "Hi"}]
-        return {"text": "Hello"}
+        return iter(
+            [
+                {
+                    "text": "Hello",
+                    "reasoning": "",
+                    "interrupt": None,
+                    "done": True,
+                }
+            ]
+        )
 
-    monkeypatch.setattr(server, "answer_with_chat", fake_answer_with_chat)
+    monkeypatch.setattr(server, "answer_with_chat_stream", fake_answer_with_chat_stream)
 
     # asyncio.run drives the coroutine, since the endpoint is called directly
     # rather than through a test client.
@@ -80,16 +89,15 @@ def test_chat_returns_answer(monkeypatch) -> None:
         server.chat(server.ChatRequest(messages=[{"role": "user", "content": "Hi"}]))
     )
 
-    # On the happy path the answer is returned as a plain dict, which FastAPI
-    # then validates against ChatResponse.
-    assert response == {"text": "Hello"}
+    assert response.media_type == "application/x-ndjson"
+    assert response.headers["x-accel-buffering"] == "no"
 
 
 def test_chat_returns_json_response_on_error(monkeypatch) -> None:
-    async def fake_answer_with_chat(_messages: list[object]) -> dict[str, str]:
+    def fake_answer_with_chat_stream(_messages: list[object]):
         raise RuntimeError("provider failed")
 
-    monkeypatch.setattr(server, "answer_with_chat", fake_answer_with_chat)
+    monkeypatch.setattr(server, "answer_with_chat_stream", fake_answer_with_chat_stream)
 
     response = asyncio.run(
         server.chat(server.ChatRequest(messages=[{"role": "user", "content": "Hi"}]))
@@ -157,29 +165,54 @@ def test_new_route_reports_agent_errors(client: TestClient, monkeypatch) -> None
 
 
 def test_chat_route(client: TestClient, monkeypatch) -> None:
-    async def answer(messages: list[Any]) -> dict[str, str]:
+    def answer(messages: list[Any]):
         assert messages == [{"role": "user", "content": "Hi"}]
-        return {"text": "Hello"}
+        return iter(
+            [
+                {
+                    "text": "",
+                    "reasoning": "Thinking",
+                    "interrupt": None,
+                    "done": False,
+                },
+                {
+                    "text": "Hello",
+                    "reasoning": "Thinking",
+                    "interrupt": None,
+                    "done": True,
+                },
+            ]
+        )
 
-    monkeypatch.setattr(server, "answer_with_chat", answer)
+    monkeypatch.setattr(server, "answer_with_chat_stream", answer)
 
     response = client.post(
         "/chat", json={"messages": [{"role": "user", "content": "Hi"}]}
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "text": "Hello",
-        "reasoning": "",
-        "interrupt": None,
-    }
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert [json.loads(line) for line in response.text.splitlines()] == [
+        {
+            "text": "",
+            "reasoning": "Thinking",
+            "interrupt": None,
+            "done": False,
+        },
+        {
+            "text": "Hello",
+            "reasoning": "Thinking",
+            "interrupt": None,
+            "done": True,
+        },
+    ]
 
 
 def test_chat_route_reports_agent_errors(client: TestClient, monkeypatch) -> None:
-    async def fail(_messages: list[Any]) -> dict[str, str]:
+    def fail(_messages: list[Any]):
         raise RuntimeError("provider failed")
 
-    monkeypatch.setattr(server, "answer_with_chat", fail)
+    monkeypatch.setattr(server, "answer_with_chat_stream", fail)
 
     response = client.post("/chat", json={"messages": [{"content": "Hi"}]})
 
@@ -197,10 +230,10 @@ def test_chat_route_reports_agent_errors(client: TestClient, monkeypatch) -> Non
 def test_chat_route_preserves_decision_error_status(
     client: TestClient, monkeypatch, error: Exception, status_code: int
 ) -> None:
-    async def refuse(_messages: list[Any]) -> dict[str, str]:
+    def refuse(_messages: list[Any]):
         raise error
 
-    monkeypatch.setattr(server, "answer_with_chat", refuse)
+    monkeypatch.setattr(server, "answer_with_chat_stream", refuse)
 
     response = client.post("/chat", json={"messages": [{"content": "decision"}]})
 

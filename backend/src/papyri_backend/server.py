@@ -1,18 +1,19 @@
 from __future__ import annotations
 
+import json
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import session
-from .chat import answer_with_chat, new_agent
+from .chat import answer_with_chat_stream, new_agent
 from .exceptions import DecisionError, InvalidDecision, StaleDecision
 from .settings import load_environment
 
@@ -117,11 +118,24 @@ async def new() -> JSONResponse | dict[str, str]:
         return JSONResponse(status_code=500, content={"error": message})
 
 
-@app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> JSONResponse | dict[str, str]:
+def _encode_stream(events: Iterator[dict[str, Any]]) -> Iterator[bytes]:
+    """Encode snapshots as NDJSON without buffering the iterator."""
+    for event in events:
+        yield (json.dumps(event, separators=(",", ":")) + "\n").encode()
+
+
+@app.post("/chat", response_model=None)
+async def chat(request: ChatRequest) -> JSONResponse | StreamingResponse:
     try:
-        answer = await answer_with_chat(request.messages)
-        return answer
+        events = answer_with_chat_stream(request.messages)
+        return StreamingResponse(
+            _encode_stream(events),
+            media_type="application/x-ndjson",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
     except DecisionError:
         # Left for the handlers above, which distinguish a stale decision from
         # an invalid one; collapsing both into a 500 here would lose that.

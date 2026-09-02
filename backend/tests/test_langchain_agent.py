@@ -128,6 +128,94 @@ def test_drive_propagates_graph_failures_to_its_caller() -> None:
         _agent(graph)._drive({"messages": []}, TurnOutput())
 
 
+def test_turn_stream_yields_cumulative_reasoning_and_text(user_message) -> None:
+    graph = FakeGraph([FakeStreamMessage(text="Answer", reasoning="Plan")])
+
+    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
+
+    assert updates[0] == {
+        "text": "",
+        "reasoning": "P",
+        "interrupt": None,
+        "done": False,
+    }
+    assert updates[-2] == {
+        "text": "Answer",
+        "reasoning": "Plan",
+        "interrupt": None,
+        "done": False,
+    }
+    assert updates[-1] == {
+        "text": "Answer",
+        "reasoning": "Plan",
+        "interrupt": None,
+        "done": True,
+    }
+
+
+def test_stream_reclassifies_chunked_inline_reasoning(user_message) -> None:
+    graph = FakeGraph([FakeStreamMessage(text="<think>Plan</think>Answer")])
+
+    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
+
+    assert any(
+        update["reasoning"] == "Plan" and update["text"] == "" for update in updates
+    )
+    assert updates[-1]["reasoning"] == "Plan"
+    assert updates[-1]["text"] == "Answer"
+
+
+def test_prefilled_reasoning_never_streams_as_answer_text(user_message) -> None:
+    graph = FakeGraph([FakeStreamMessage(text="Plan</think>Answer")])
+    agent = _agent(graph)
+    agent.inline_reasoning = True
+
+    updates = list(agent.stream_single_turn(user_message("Question")))
+
+    assert all(not update["text"].startswith("Plan") for update in updates)
+    assert any(update["reasoning"] == "Plan" for update in updates)
+    assert updates[-1]["reasoning"] == "Plan"
+    assert updates[-1]["text"] == "Answer"
+
+
+def test_raw_message_events_keep_reasoning_and_text_interleaved(user_message) -> None:
+    class RawMessage:
+        tool_calls = FakeToolCalls()
+
+        def __iter__(self):
+            return iter(
+                [
+                    {
+                        "event": "content-block-delta",
+                        "delta": {"type": "reasoning-delta", "reasoning": "R1"},
+                    },
+                    {
+                        "event": "content-block-delta",
+                        "delta": {"type": "text-delta", "text": "A1"},
+                    },
+                    {
+                        "event": "content-block-delta",
+                        "delta": {"type": "reasoning-delta", "reasoning": "R2"},
+                    },
+                    {
+                        "event": "content-block-delta",
+                        "delta": {"type": "text-delta", "text": "A2"},
+                    },
+                ]
+            )
+
+    graph = FakeGraph([RawMessage()])
+
+    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
+
+    assert [(item["reasoning"], item["text"]) for item in updates[:-1]] == [
+        ("R1", ""),
+        ("R1", "A1"),
+        ("R1R2", "A1"),
+        ("R1R2", "A1A2"),
+    ]
+
+
 # --- complete turns and pauses ----------------------------------------------
 
 

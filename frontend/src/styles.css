@@ -78,6 +78,7 @@ textarea {
 }
 
 .export-button,
+.settings-button,
 .github-issues-link {
   width: 38px;
   height: 38px;
@@ -93,6 +94,7 @@ textarea {
 }
 
 .export-button:hover:not(:disabled),
+.settings-button:hover,
 .github-issues-link:hover {
   border-color: #b7a58b;
   color: #1f2937;
@@ -100,12 +102,14 @@ textarea {
 }
 
 .export-button:focus-visible,
+.settings-button:focus-visible,
 .github-issues-link:focus-visible {
   outline: 3px solid rgba(180, 83, 42, 0.25);
   outline-offset: 2px;
 }
 
-.github-issues-link svg {
+.github-issues-link svg,
+.settings-button svg {
   width: 20px;
   height: 20px;
   display: block;
@@ -114,6 +118,53 @@ textarea {
 .export-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.settings-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.settings-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 220px;
+  padding: 12px;
+  border: 1px solid #d6cab8;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(31, 41, 55, 0.18);
+}
+
+.settings-title {
+  margin: 0 0 8px;
+  color: #1f2937;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.settings-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px;
+  border-radius: 6px;
+  color: #344054;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.settings-option:hover {
+  background: #f7f4ed;
+}
+
+.settings-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #b4532a;
 }
 
 .new-session-button {
@@ -368,6 +419,11 @@ textarea {
   font-size: 0.84rem;
   font-weight: 700;
   line-height: 1.4;
+}
+
+.reasoning-summary-status {
+  color: #667085;
+  font-weight: 500;
 }
 
 .reasoning-content {

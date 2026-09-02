@@ -1,5 +1,9 @@
 name: defaultAgent
 
+# Qwen's chat template consumes the opening <think> tag. Classify its output
+# as reasoning immediately instead of briefly streaming it as answer text.
+inline_reasoning: true
+
 model:
   type: langchain_openai.ChatOpenAI
   kwargs:

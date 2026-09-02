@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from papyri_backend.langchain_agent import TurnOutput, split_think
+from papyri_backend.langchain_agent import (
+    TurnOutput,
+    split_streamed_think,
+    split_think,
+)
 
 
 @pytest.mark.parametrize(
@@ -31,6 +35,17 @@ from papyri_backend.langchain_agent import TurnOutput, split_think
 )
 def test_split_think(text: str, expected: tuple[str, str]) -> None:
     assert split_think(text) == expected
+
+
+def test_an_unfinished_explicit_think_block_is_streamed_as_reasoning() -> None:
+    assert split_streamed_think("<think>still working") == ("still working", "")
+
+
+def test_a_prefilled_think_block_is_reasoning_from_its_first_token() -> None:
+    assert split_streamed_think("still working", assume_prefilled=True) == (
+        "still working",
+        "",
+    )
 
 
 def test_a_trace_is_kept_out_of_the_answer() -> None:
