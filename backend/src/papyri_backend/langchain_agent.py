@@ -359,13 +359,13 @@ class LangChainAgent:
         return {"type": "respond", "message": message}
 
     def _stream_drive(self, payload: Any, turn: TurnOutput) -> Iterator[dict[str, Any]]:
-        """Drive one graph run and yield cumulative output after every delta.
+        """Drive one graph run and yield cumulative output after every delta."""
 
-        LangGraph's v3 ``messages`` projection contains one live stream per
-        model call. Iterating its raw events keeps reasoning and text in
-        provider order; converting either typed projection directly to ``str``
-        would first drain it and lose HTTP streaming.
-        """
+        # LangGraph's v3 ``messages`` projection contains one live stream per
+        # model call. Iterating its raw events keeps reasoning and text in
+        # provider order; converting either typed projection directly to ``str``
+        # would first drain it and lose HTTP streaming.
+
         run = self.agent.stream_events(payload, config=self._config, version="v3")
         for message in run.messages:
             answer_before_message = turn.answer
