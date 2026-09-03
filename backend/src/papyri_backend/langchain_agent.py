@@ -86,22 +86,6 @@ class TurnOutput:
                 f"\n\n````\nUsing tool: {tool_call.get('name')}\n{body}\n````\n\n"
             )
 
-    def add_message(
-        self, text: str, reasoning: str, tool_calls: list[dict[str, Any]]
-    ) -> None:
-        """Collect one model message.
-
-        Args:
-            text: The message's answer text, which may carry a reasoning trace.
-            reasoning: The message's separately reported reasoning trace.
-            tool_calls: The calls the model made in this message.
-        """
-        inline_reasoning, answer = split_think(text)
-        self.reasoning += reasoning + inline_reasoning
-        self.answer += answer
-
-        self.add_tool_calls(tool_calls)
-
     def as_update(
         self, *, done: bool, interrupt: dict[str, Any] | None = None
     ) -> dict[str, Any]:
@@ -155,9 +139,7 @@ class LangChainAgent:
         """
         return cls(**utils.load_config(path))
 
-    def __init__(
-        self, *, inline_reasoning: bool | None = None, **agent_kwargs: Any
-    ):
+    def __init__(self, *, inline_reasoning: bool | None = None, **agent_kwargs: Any):
         """Build a deep agent.
 
         Args:
@@ -177,9 +159,7 @@ class LangChainAgent:
         # that run a model of their own. Building everything in one pass would
         # instead offer the model to its own constructor.
         model = utils.build(agent_kwargs.get("model"))
-        model_name = getattr(model, "model_name", None) or getattr(
-            model, "model", ""
-        )
+        model_name = getattr(model, "model_name", None) or getattr(model, "model", "")
         self.inline_reasoning = (
             "qwen" in str(model_name).lower()
             if inline_reasoning is None
@@ -378,22 +358,6 @@ class LangChainAgent:
             raise InvalidDecision("Responding on behalf of a tool needs a message.")
         return {"type": "respond", "message": message}
 
-    def _drive(self, payload: Any, turn: TurnOutput) -> None:
-        """Run the graph until it finishes or pauses for a decision.
-
-        Args:
-            payload: The graph input, or a resume command.
-            turn: Collects what the run produces.
-        """
-        # Draining the messages is what drives the run forward. A pause ends
-        # the drain and is left in place: the checkpointer holds it until a
-        # decision arrives on a later turn.
-        run = self.agent.stream_events(payload, config=self._config, version="v3")
-        for message in run.messages:
-            turn.add_message(
-                str(message.text), str(message.reasoning), message.tool_calls.get()
-            )
-
     def _stream_drive(self, payload: Any, turn: TurnOutput) -> Iterator[dict[str, Any]]:
         """Drive one graph run and yield cumulative output after every delta.
 
@@ -504,35 +468,6 @@ class LangChainAgent:
         if isinstance(payload, dict) and "interrupt_id" in payload:
             return payload
         return None
-
-    def run_single_turn(self, message) -> dict[str, Any]:
-        """Run one turn for a single incoming message.
-
-        A message that carries a decision answers the paused run instead of
-        starting a new one.
-
-        Args:
-            message: An incoming chat message, whose first content part carries
-                the user's text.
-
-        Returns:
-            The agent's non-empty ``text`` answer, its ``reasoning`` trace, and
-            the ``interrupt`` the run is now paused on, if any. A run that failed
-            leaves no answer, so the collected error takes its place. A completed
-            run without answer text receives a recoverable fallback message.
-
-        Raises:
-            StaleDecision: The message answered an interrupt that is not pending.
-            InvalidDecision: The decision was malformed or is not allowed.
-        """
-        final = None
-        for update in self.stream_single_turn(message):
-            final = update
-
-        # Every stream emits exactly one terminal snapshot, including empty
-        # and failed runs.
-        assert final is not None
-        return {key: final[key] for key in ("text", "reasoning", "interrupt")}
 
     def stream_single_turn(self, message) -> Iterator[dict[str, Any]]:
         """Stream one turn as cumulative text/reasoning snapshots.

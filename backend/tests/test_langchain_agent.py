@@ -13,7 +13,7 @@ from pydantic import SecretStr
 
 from papyri_backend import langchain_agent as agent_module
 from papyri_backend.exceptions import InvalidDecision, StaleDecision
-from papyri_backend.langchain_agent import LangChainAgent, TurnOutput
+from papyri_backend.langchain_agent import LangChainAgent
 
 
 def _agent(graph: FakeGraph, thread_id: str = "test-thread") -> LangChainAgent:
@@ -92,46 +92,11 @@ def test_from_config_loads_and_delegates_to_the_constructor(monkeypatch) -> None
 # --- streaming ---------------------------------------------------------------
 
 
-def test_drive_collects_messages_and_uses_the_v3_thread_config() -> None:
-    graph = FakeGraph(
-        [
-            FakeStreamMessage(text="First ", reasoning="Plan: "),
-            FakeStreamMessage(
-                text="answer",
-                tool_calls=FakeToolCalls(
-                    [{"name": "query_sql", "args": {"tm_id": 123456}}]
-                ),
-            ),
-        ]
-    )
-    agent = _agent(graph, thread_id="papyrus-thread")
-    turn = TurnOutput()
-
-    agent._drive({"messages": []}, turn)
-
-    assert turn.answer == "First answer"
-    assert "Plan:" in turn.reasoning
-    assert "Using tool: query_sql" in turn.reasoning
-    assert graph.calls == [
-        {
-            "payload": {"messages": []},
-            "config": {"configurable": {"thread_id": "papyrus-thread"}},
-            "version": "v3",
-        }
-    ]
-
-
-def test_drive_propagates_graph_failures_to_its_caller() -> None:
-    graph = FakeGraph(error=RuntimeError("stream disconnected"))
-
-    with pytest.raises(RuntimeError, match="stream disconnected"):
-        _agent(graph)._drive({"messages": []}, TurnOutput())
-
-
 def test_turn_stream_yields_cumulative_reasoning_and_text(user_message) -> None:
     graph = FakeGraph([FakeStreamMessage(text="Answer", reasoning="Plan")])
+    agent = _agent(graph, thread_id="papyrus-thread")
 
-    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
+    updates = list(agent.stream_single_turn(user_message("Question")))
 
     assert updates[0] == {
         "text": "",
@@ -151,6 +116,24 @@ def test_turn_stream_yields_cumulative_reasoning_and_text(user_message) -> None:
         "interrupt": None,
         "done": True,
     }
+    assert graph.calls[0]["config"] == {"configurable": {"thread_id": "papyrus-thread"}}
+
+
+def test_turn_stream_adds_finalized_tool_calls_to_reasoning(user_message) -> None:
+    graph = FakeGraph(
+        [
+            FakeStreamMessage(
+                tool_calls=FakeToolCalls(
+                    [{"name": "query_sql", "args": {"tm_id": 123456}}]
+                )
+            )
+        ]
+    )
+
+    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
+
+    assert "Using tool: query_sql" in updates[-1]["reasoning"]
+    assert "tm_id: 123456" in updates[-1]["reasoning"]
 
 
 def test_stream_reclassifies_chunked_inline_reasoning(user_message) -> None:
@@ -222,12 +205,13 @@ def test_raw_message_events_keep_reasoning_and_text_interleaved(user_message) ->
 def test_an_ordinary_turn_streams_an_answer(user_message) -> None:
     graph = FakeGraph([FakeStreamMessage(text="P.Oxy. XII 1450 is a lease.")])
 
-    answer = _agent(graph).run_single_turn(user_message("Find a lease."))
+    answer = list(_agent(graph).stream_single_turn(user_message("Find a lease.")))[-1]
 
     assert answer == {
         "text": "P.Oxy. XII 1450 is a lease.",
         "reasoning": "",
         "interrupt": None,
+        "done": True,
     }
 
 
@@ -235,12 +219,13 @@ def test_an_empty_completed_run_returns_a_recoverable_message(user_message) -> N
     """A completed turn without output must be visible to the chat user."""
     graph = FakeGraph([])
 
-    answer = _agent(graph).run_single_turn(user_message("Find a lease."))
+    answer = list(_agent(graph).stream_single_turn(user_message("Find a lease.")))[-1]
 
     assert answer == {
         "text": "No answer was produced. Please try again.",
         "reasoning": "",
         "interrupt": None,
+        "done": True,
     }
 
 
@@ -250,7 +235,7 @@ def test_a_graph_failure_replaces_partial_output(user_message) -> None:
         error_after_messages=RuntimeError("model failed"),
     )
 
-    answer = _agent(graph).run_single_turn(user_message("Find P.Oxy."))
+    answer = list(_agent(graph).stream_single_turn(user_message("Find P.Oxy.")))[-1]
 
     assert answer["text"] == "The agent run failed: model failed"
     assert answer["reasoning"] == "Partial reasoning"
@@ -265,7 +250,7 @@ def test_a_paused_turn_includes_an_action_specific_client_view(user_message) -> 
         [FakeStreamMessage(text="I will save the notes.\n")], interrupts=[interrupt]
     )
 
-    answer = _agent(graph).run_single_turn(user_message("Save the notes."))
+    answer = list(_agent(graph).stream_single_turn(user_message("Save the notes.")))[-1]
 
     assert (
         answer["text"]
@@ -288,12 +273,17 @@ def test_a_valid_decision_resumes_the_paused_turn(decision_reply) -> None:
     graph = FakeGraph([FakeStreamMessage(text="Saved.")], interrupts=[interrupt])
     agent = _agent(graph)
 
-    answer = agent.run_single_turn(decision_reply("interrupt-1"))
+    answer = list(agent.stream_single_turn(decision_reply("interrupt-1")))[-1]
 
     payload = graph.calls[0]["payload"]
     assert isinstance(payload, Command)
     assert payload.resume == {"decisions": [{"type": "approve"}]}
-    assert answer == {"text": "Saved.", "reasoning": "", "interrupt": None}
+    assert answer == {
+        "text": "Saved.",
+        "reasoning": "",
+        "interrupt": None,
+        "done": True,
+    }
 
 
 def test_an_allowed_rejection_resumes_and_clears_the_old_pause(decision_reply) -> None:
@@ -303,11 +293,13 @@ def test_an_allowed_rejection_resumes_and_clears_the_old_pause(decision_reply) -
     )
     agent = _agent(graph)
 
-    answer = agent.run_single_turn(
-        decision_reply(
-            "interrupt-1", [{"type": "reject", "message": "do not save notes"}]
+    answer = list(
+        agent.stream_single_turn(
+            decision_reply(
+                "interrupt-1", [{"type": "reject", "message": "do not save notes"}]
+            )
         )
-    )
+    )[-1]
 
     payload = graph.calls[0]["payload"]
     assert isinstance(payload, Command)
@@ -319,6 +311,7 @@ def test_an_allowed_rejection_resumes_and_clears_the_old_pause(decision_reply) -
         "text": "I will not write the file.",
         "reasoning": "",
         "interrupt": None,
+        "done": True,
     }
 
 
@@ -328,7 +321,7 @@ def test_an_invalid_decision_does_not_run_or_clear_the_pause(decision_reply) -> 
     agent = _agent(graph)
 
     with pytest.raises(InvalidDecision, match="not allowed"):
-        agent.run_single_turn(decision_reply("interrupt-1", [{"type": "reject"}]))
+        agent.stream_single_turn(decision_reply("interrupt-1", [{"type": "reject"}]))
 
     assert graph.calls == []
     assert agent._pending_interrupt() is interrupt

@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import AsyncGenerator, Iterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from . import session
 from .chat import answer_with_chat_stream, new_agent
-from .exceptions import DecisionError, InvalidDecision, StaleDecision
+from .exceptions import InvalidDecision, StaleDecision
 from .settings import load_environment
 
 load_environment()
@@ -49,6 +48,10 @@ class ChatResponse(BaseModel):
     text: str
     reasoning: str = ""
     interrupt: InterruptView | None = None
+
+
+class ChatStreamEvent(ChatResponse):
+    done: bool
 
 
 def _cors_origins() -> list[str]:
@@ -118,28 +121,17 @@ async def new() -> JSONResponse | dict[str, str]:
         return JSONResponse(status_code=500, content={"error": message})
 
 
-def _encode_stream(events: Iterator[dict[str, Any]]) -> Iterator[bytes]:
-    """Encode snapshots as NDJSON without buffering the iterator."""
-    for event in events:
-        yield (json.dumps(event, separators=(",", ":")) + "\n").encode()
+def _prepare_chat(request: ChatRequest, response: Response) -> Iterator[dict[str, Any]]:
+    """Prepare the run before FastAPI sends the streaming response headers."""
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    return answer_with_chat_stream(request.messages)
 
 
-@app.post("/chat", response_model=None)
-async def chat(request: ChatRequest) -> JSONResponse | StreamingResponse:
-    try:
-        events = answer_with_chat_stream(request.messages)
-        return StreamingResponse(
-            _encode_stream(events),
-            media_type="application/x-ndjson",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-            },
-        )
-    except DecisionError:
-        # Left for the handlers above, which distinguish a stale decision from
-        # an invalid one; collapsing both into a 500 here would lose that.
-        raise
-    except Exception as exc:
-        message = str(exc) or "Unexpected error"
-        return JSONResponse(status_code=500, content={"error": message})
+ChatEvents = Annotated[Iterator[dict[str, Any]], Depends(_prepare_chat)]
+
+
+@app.post("/chat")
+def chat(events: ChatEvents) -> Iterator[ChatStreamEvent]:
+    """Stream typed JSON Lines events using FastAPI's native support."""
+    yield from events

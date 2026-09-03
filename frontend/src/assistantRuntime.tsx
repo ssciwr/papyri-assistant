@@ -21,7 +21,7 @@ const modelAdapter: ChatModelAdapter = {
     const response = await fetch(`${apiUrl}/chat`, {
       method: "POST",
       headers: {
-        Accept: "application/x-ndjson",
+        Accept: "application/jsonl",
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ messages }),
