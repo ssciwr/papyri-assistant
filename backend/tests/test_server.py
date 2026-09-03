@@ -73,12 +73,8 @@ def test_prepare_chat_returns_events_and_streaming_headers(monkeypatch) -> None:
         assert messages == [{"role": "user", "content": "Hi"}]
         return iter(
             [
-                {
-                    "text": "Hello",
-                    "reasoning": "",
-                    "interrupt": None,
-                    "done": True,
-                }
+                {"type": "text", "content": "Hello"},
+                {"type": "done", "interrupt": None},
             ]
         )
 
@@ -89,7 +85,10 @@ def test_prepare_chat_returns_events_and_streaming_headers(monkeypatch) -> None:
         server.ChatRequest(messages=[{"role": "user", "content": "Hi"}]), response
     )
 
-    assert list(events)[-1]["text"] == "Hello"
+    assert list(events) == [
+        {"type": "text", "content": "Hello"},
+        {"type": "done", "interrupt": None},
+    ]
     assert response.headers["cache-control"] == "no-cache"
     assert response.headers["x-accel-buffering"] == "no"
 
@@ -165,18 +164,9 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
         assert messages == [{"role": "user", "content": "Hi"}]
         return iter(
             [
-                {
-                    "text": "",
-                    "reasoning": "Thinking",
-                    "interrupt": None,
-                    "done": False,
-                },
-                {
-                    "text": "Hello",
-                    "reasoning": "Thinking",
-                    "interrupt": None,
-                    "done": True,
-                },
+                {"type": "reasoning", "content": "Thinking"},
+                {"type": "text", "content": "Hello"},
+                {"type": "done", "interrupt": None},
             ]
         )
 
@@ -191,18 +181,9 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
     assert response.headers["cache-control"] == "no-cache"
     assert response.headers["x-accel-buffering"] == "no"
     assert [json.loads(line) for line in response.text.splitlines()] == [
-        {
-            "text": "",
-            "reasoning": "Thinking",
-            "interrupt": None,
-            "done": False,
-        },
-        {
-            "text": "Hello",
-            "reasoning": "Thinking",
-            "interrupt": None,
-            "done": True,
-        },
+        {"type": "reasoning", "content": "Thinking", "interrupt": None},
+        {"type": "text", "content": "Hello", "interrupt": None},
+        {"type": "done", "content": "", "interrupt": None},
     ]
 
 

@@ -9,12 +9,15 @@ import {
 import { requestDecision, type PendingInterrupt } from "./decisionGate";
 
 export const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
-type ChatStreamEvent = {
-  text: string;
-  reasoning: string;
-  interrupt?: PendingInterrupt | null;
-  done: boolean;
-};
+type ChatStreamEvent =
+  | {
+      type: "text" | "reasoning" | "replace";
+      content: string;
+    }
+  | {
+      type: "done";
+      interrupt?: PendingInterrupt | null;
+    };
 
 const modelAdapter: ChatModelAdapter = {
   async *run({ messages, abortSignal }) {
@@ -40,18 +43,28 @@ const modelAdapter: ChatModelAdapter = {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let receivedEvent = false;
+    let text = "";
+    let reasoning = "";
+    let completed = false;
 
     const parseEvent = (line: string): ChatStreamEvent => {
       try {
         const event = JSON.parse(line) as Partial<ChatStreamEvent>;
 
         if (
-          typeof event.text !== "string" ||
-          typeof event.reasoning !== "string" ||
-          typeof event.done !== "boolean"
+          event.type !== "text" &&
+          event.type !== "reasoning" &&
+          event.type !== "replace" &&
+          event.type !== "done"
         ) {
           throw new Error("missing stream fields");
+        }
+
+        if (
+          event.type !== "done" &&
+          (!("content" in event) || typeof event.content !== "string")
+        ) {
+          throw new Error("missing stream content");
         }
 
         return event as ChatStreamEvent;
@@ -64,29 +77,40 @@ const modelAdapter: ChatModelAdapter = {
       }
     };
 
-    const asContent = (
-      event: ChatStreamEvent
-    ): ThreadAssistantMessagePart[] => {
+    const asContent = (): ThreadAssistantMessagePart[] => {
       const content: ThreadAssistantMessagePart[] = [];
 
       // Keep a stable reasoning part throughout the response, including before
       // its first token, so the foldable reasoning panel never disappears.
-      content.push({ type: "reasoning", text: event.reasoning });
-      if (event.text || event.done) {
-        content.push({ type: "text", text: event.text });
+      content.push({ type: "reasoning", text: reasoning });
+      if (text || completed) {
+        content.push({ type: "text", text });
       }
 
       return content;
     };
 
     const handleEvent = (event: ChatStreamEvent) => {
-      receivedEvent = true;
-
-      if (event.done && event.interrupt?.actions.length) {
-        requestDecision(event.interrupt);
+      switch (event.type) {
+        case "text":
+          text += event.content;
+          break;
+        case "reasoning":
+          reasoning += event.content;
+          break;
+        case "replace":
+          text = event.content;
+          break;
+        case "done":
+          text = text.trim();
+          reasoning = reasoning.trim();
+          completed = true;
+          if (event.interrupt?.actions.length) {
+            requestDecision(event.interrupt);
+          }
       }
 
-      return { content: asContent(event) };
+      return { content: asContent() };
     };
 
     while (true) {
@@ -110,8 +134,10 @@ const modelAdapter: ChatModelAdapter = {
       }
     }
 
-    if (!receivedEvent) {
-      throw new Error("The server closed the response without an answer.");
+    if (!completed) {
+      throw new Error(
+        "The server closed the response before completing the answer."
+      );
     }
   }
 };

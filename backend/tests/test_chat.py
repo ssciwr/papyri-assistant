@@ -66,8 +66,9 @@ def test_new_agent_starts_a_session(monkeypatch) -> None:
 
 def test_stream_forwards_every_update_from_the_latest_message(monkeypatch) -> None:
     updates = [
-        {"text": "", "reasoning": "Plan", "interrupt": None, "done": False},
-        {"text": "Done", "reasoning": "Plan", "interrupt": None, "done": True},
+        {"type": "reasoning", "content": "Plan"},
+        {"type": "text", "content": "Done"},
+        {"type": "done", "interrupt": None},
     ]
     agent = FakeStreamingAgent(updates)
     use(monkeypatch, agent)
@@ -99,8 +100,9 @@ def test_stream_failure_becomes_a_terminal_update_and_drops_session(
 
     result = list(chat.answer_with_chat_stream([message("hi")]))
 
-    assert result[-1]["done"] is True
-    assert "stream disconnected" in result[-1]["text"]
+    assert result[-1] == {"type": "done", "interrupt": None}
+    assert result[-2]["type"] == "replace"
+    assert "stream disconnected" in result[-2]["content"]
     assert session._CURRENT is None
     assert connection.close_calls == 1
 
@@ -110,12 +112,7 @@ def test_closing_a_stream_drops_the_partially_consumed_session(monkeypatch) -> N
         monkeypatch,
         FakeStreamingAgent(
             [
-                {
-                    "text": "partial",
-                    "reasoning": "",
-                    "interrupt": None,
-                    "done": False,
-                }
+                {"type": "text", "content": "partial"},
             ]
         ),
     )

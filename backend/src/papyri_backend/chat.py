@@ -9,6 +9,16 @@ from . import session
 from .exceptions import DecisionError
 
 
+def _error_events(exc: Exception) -> Iterator[dict[str, Any]]:
+    yield {
+        "type": "replace",
+        "content": (
+            f"Exception happened in chat: {exc}. Start a new session to clear the error"
+        ),
+    }
+    yield {"type": "done", "interrupt": None}
+
+
 def new_agent() -> dict[str, str]:
     """Start a fresh session, discarding the current conversation.
 
@@ -31,19 +41,7 @@ def answer_with_chat_stream(raw_messages: list[Any]) -> Iterator[dict[str, Any]]
         raise
     except Exception as exc:
         session.clear()
-        return iter(
-            (
-                {
-                    "text": (
-                        f"Exception happened in chat: {exc}. "
-                        "Start a new session to clear the error"
-                    ),
-                    "reasoning": "",
-                    "interrupt": None,
-                    "done": True,
-                },
-            )
-        )
+        return _error_events(exc)
 
     return _guard_stream(stream)
 
@@ -59,12 +57,4 @@ def _guard_stream(stream: Iterator[dict[str, Any]]) -> Iterator[dict[str, Any]]:
         raise
     except Exception as exc:
         session.clear()
-        yield {
-            "text": (
-                f"Exception happened in chat: {exc}. "
-                "Start a new session to clear the error"
-            ),
-            "reasoning": "",
-            "interrupt": None,
-            "done": True,
-        }
+        yield from _error_events(exc)

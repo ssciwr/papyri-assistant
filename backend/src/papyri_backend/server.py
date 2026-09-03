@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncGenerator, Iterator
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -50,8 +50,12 @@ class ChatResponse(BaseModel):
     interrupt: InterruptView | None = None
 
 
-class ChatStreamEvent(ChatResponse):
-    done: bool
+class ChatStreamEvent(BaseModel):
+    """One content delta or terminal control event."""
+
+    type: Literal["text", "reasoning", "replace", "done"]
+    content: str = ""
+    interrupt: InterruptView | None = None
 
 
 def _cors_origins() -> list[str]:

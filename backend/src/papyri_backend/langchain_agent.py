@@ -4,7 +4,6 @@ import json
 import re
 import uuid
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, get_args
 
@@ -22,106 +21,76 @@ from .utils import utils
 _THINK_OPEN = re.compile(r"<\s*think\s*>", re.IGNORECASE)
 _THINK_CLOSE = re.compile(r"</\s*think\s*>", re.IGNORECASE)
 _EMPTY_ANSWER_MESSAGE = "No answer was produced. Please try again."
+_PARTIAL_TAG_LIMIT = 64
 
 
-def split_think(text: str) -> tuple[str, str]:
-    """Separate an inline reasoning trace from the answer text.
+class _InlineReasoningParser:
+    """Classify inline reasoning without retaining the complete message."""
 
-    Args:
-        text: One model message's text.
+    def __init__(self, *, assume_prefilled: bool):
+        self._mode = "reasoning" if assume_prefilled else "prefix"
+        self._buffer = ""
 
-    Returns:
-        The reasoning trace and the answer. The trace is empty when the message
-        carries none.
-    """
-    # The trace always comes first, so the closing tag is the single point at
-    # which the message switches from reasoning to answer.
-    close_tag = _THINK_CLOSE.search(text)
-    if close_tag is None:
-        return "", text
+    def feed(self, delta: str) -> list[tuple[str, str]]:
+        self._buffer += delta
+        return self._drain()
 
-    # Deployments whose chat template pre-fills the opening tag start the trace
-    # without one, so its absence is not a reason to skip the split.
-    reasoning = _THINK_OPEN.sub("", text[: close_tag.start()], 1)
-    return reasoning, text[close_tag.end() :]
+    def finish(self) -> list[tuple[str, str]]:
+        if not self._buffer:
+            return []
+        kind = "reasoning" if self._mode == "reasoning" else "text"
+        delta, self._buffer = self._buffer, ""
+        return [(kind, delta)]
 
+    def _drain(self) -> list[tuple[str, str]]:
+        if self._mode == "text":
+            delta, self._buffer = self._buffer, ""
+            return [("text", delta)] if delta else []
 
-def split_streamed_think(
-    text: str, *, assume_prefilled: bool = False
-) -> tuple[str, str]:
-    """Classify partial inline reasoning before its closing tag arrives.
+        if self._mode == "prefix":
+            candidate = self._buffer.lstrip()
+            if not candidate:
+                return []
+            if not candidate.startswith("<"):
+                self._mode = "text"
+                return self._drain()
 
-    ``assume_prefilled`` is for reasoning models whose chat template consumes
-    the opening ``<think>`` tag. Their output must be treated as reasoning from
-    its first token; otherwise it briefly streams as answer text and jumps into
-    the reasoning panel only when the closing tag arrives.
-    """
-    if _THINK_CLOSE.search(text) is not None:
-        return split_think(text)
+            tag_end = candidate.find(">")
+            if tag_end < 0 and len(candidate) <= _PARTIAL_TAG_LIMIT:
+                return []
+            if tag_end >= 0 and _THINK_OPEN.fullmatch(candidate[: tag_end + 1]):
+                self._mode = "reasoning"
+                self._buffer = candidate[tag_end + 1 :]
+                return self._drain()
 
-    open_tag = _THINK_OPEN.search(text)
-    if open_tag is not None and not text[: open_tag.start()].strip():
-        return text[open_tag.end() :], ""
+            self._mode = "text"
+            return self._drain()
 
-    if assume_prefilled:
-        return text, ""
+        close_tag = _THINK_CLOSE.search(self._buffer)
+        if close_tag is not None:
+            reasoning = self._buffer[: close_tag.start()]
+            answer = self._buffer[close_tag.end() :]
+            self._buffer = ""
+            self._mode = "text"
+            return [
+                (kind, text)
+                for kind, text in (("reasoning", reasoning), ("text", answer))
+                if text
+            ]
 
-    return "", text
+        possible_tag = self._buffer.rfind("<")
+        if possible_tag < 0:
+            reasoning, self._buffer = self._buffer, ""
+            return [("reasoning", reasoning)] if reasoning else []
 
+        suffix = self._buffer[possible_tag:]
+        if ">" in suffix or len(suffix) > _PARTIAL_TAG_LIMIT:
+            reasoning, self._buffer = self._buffer, ""
+            return [("reasoning", reasoning)]
 
-@dataclass
-class TurnOutput:
-    """What one turn produced, as the client will read it."""
-
-    answer: str = ""
-    reasoning: str = ""
-    error: str = ""
-
-    def add_tool_calls(self, tool_calls: list[dict[str, Any]]) -> None:
-        """Add finalized tool calls to the reasoning trace."""
-        for tool_call in tool_calls or []:
-            args = tool_call.get("args") or {}
-            body = "\n".join(f"{k}: {v}" for k, v in args.items())
-            self.reasoning += (
-                f"\n\n````\nUsing tool: {tool_call.get('name')}\n{body}\n````\n\n"
-            )
-
-    def as_update(
-        self, *, done: bool, interrupt: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        """Render a cumulative snapshot for an HTTP response stream."""
-        if done:
-            answer = self.as_answer(interrupt)
-        else:
-            answer = {
-                "text": self.error or self.answer,
-                "reasoning": self.reasoning,
-                "interrupt": None,
-            }
-        return {**answer, "done": done}
-
-    def as_answer(self, interrupt: dict[str, Any] | None) -> dict[str, Any]:
-        """Render the turn as the chat response.
-
-        Args:
-            interrupt: The interrupt the run is now paused on, if any.
-
-        Returns:
-            The turn's ``text``, ``reasoning`` and ``interrupt``. A completed,
-            uninterrupted turn without answer text receives a recoverable
-            fallback message.
-        """
-        # A run that failed leaves no usable answer, so the error takes its
-        # place rather than trailing whatever was emitted before the failure.
-        text = self.error.strip() or self.answer.strip()
-        if not text and interrupt is None:
-            text = _EMPTY_ANSWER_MESSAGE
-
-        return {
-            "text": text,
-            "reasoning": self.reasoning.strip(),
-            "interrupt": interrupt,
-        }
+        reasoning = self._buffer[:possible_tag]
+        self._buffer = suffix
+        return [("reasoning", reasoning)] if reasoning else []
 
 
 class LangChainAgent:
@@ -358,48 +327,46 @@ class LangChainAgent:
             raise InvalidDecision("Responding on behalf of a tool needs a message.")
         return {"type": "respond", "message": message}
 
-    def _stream_drive(self, payload: Any, turn: TurnOutput) -> Iterator[dict[str, Any]]:
-        """Drive one graph run and yield cumulative output after every delta."""
-
-        # LangGraph's v3 ``messages`` projection contains one live stream per
-        # model call. Iterating its raw events keeps reasoning and text in
-        # provider order; converting either typed projection directly to ``str``
-        # would first drain it and lose HTTP streaming.
-
+    def _stream_drive(self, payload: Any) -> Iterator[dict[str, Any]]:
+        """Drive one graph run and forward each content delta exactly once."""
         run = self.agent.stream_events(payload, config=self._config, version="v3")
         for message in run.messages:
-            answer_before_message = turn.answer
-            reasoning_before_message = turn.reasoning
-            streamed_text = ""
-            streamed_reasoning = ""
+            parser = _InlineReasoningParser(
+                assume_prefilled=getattr(self, "inline_reasoning", False)
+            )
+            has_reasoning_projection = False
+
             for kind, delta in self._message_deltas(message):
                 if kind == "reasoning":
-                    streamed_reasoning += delta
+                    if not has_reasoning_projection:
+                        has_reasoning_projection = True
+                        yield from self._content_events(parser.finish())
+                    yield {"type": "reasoning", "content": delta}
+                elif has_reasoning_projection:
+                    yield {"type": "text", "content": delta}
                 else:
-                    streamed_text += delta
+                    yield from self._content_events(parser.feed(delta))
 
-                # Inline <think> models report their trace through the text
-                # projection. Re-evaluating the current model message on each
-                # delta also handles a closing tag split across chunks. A
-                # separately reported reasoning stream makes the text
-                # projection unambiguously answer text.
-                if streamed_reasoning:
-                    inline_reasoning, answer = "", streamed_text
-                else:
-                    inline_reasoning, answer = split_streamed_think(
-                        streamed_text,
-                        assume_prefilled=getattr(self, "inline_reasoning", False),
-                    )
-                turn.answer = answer_before_message + answer
-                turn.reasoning = (
-                    reasoning_before_message + streamed_reasoning + inline_reasoning
-                )
-                yield turn.as_update(done=False)
+            if not has_reasoning_projection:
+                yield from self._content_events(parser.finish())
 
-            tool_calls = message.tool_calls.get()
-            if tool_calls:
-                turn.add_tool_calls(tool_calls)
-                yield turn.as_update(done=False)
+            for tool_call in message.tool_calls.get() or []:
+                args = tool_call.get("args") or {}
+                body = "\n".join(f"{key}: {value}" for key, value in args.items())
+                yield {
+                    "type": "reasoning",
+                    "content": (
+                        f"\n\n````\nUsing tool: {tool_call.get('name')}\n"
+                        f"{body}\n````\n\n"
+                    ),
+                }
+
+    @staticmethod
+    def _content_events(
+        deltas: list[tuple[str, str]],
+    ) -> Iterator[dict[str, Any]]:
+        for kind, content in deltas:
+            yield {"type": kind, "content": content}
 
     @staticmethod
     def _message_deltas(message: Any) -> Iterator[tuple[str, str]]:
@@ -470,7 +437,7 @@ class LangChainAgent:
         return None
 
     def stream_single_turn(self, message) -> Iterator[dict[str, Any]]:
-        """Stream one turn as cumulative text/reasoning snapshots.
+        """Stream one turn as text and reasoning deltas.
 
         Decision validation happens before the iterator is returned. This is
         important for HTTP: stale or invalid decisions can still receive their
@@ -489,20 +456,28 @@ class LangChainAgent:
         return self._stream_prepared_turn(payload)
 
     def _stream_prepared_turn(self, payload: Any) -> Iterator[dict[str, Any]]:
-        turn = TurnOutput()
+        has_answer = False
+        failed = False
 
         try:
-            yield from self._stream_drive(payload, turn)
+            for event in self._stream_drive(payload):
+                if event["type"] == "text" and event["content"].strip():
+                    has_answer = True
+                yield event
         except Exception as exc:
-            # Run failures deliberately travel as chat output during local
-            # development. Because updates are cumulative, this terminal
-            # snapshot replaces any incomplete answer already shown.
-            turn.error = f"The agent run failed: {exc}"
+            failed = True
+            yield {"type": "replace", "content": f"The agent run failed: {exc}"}
 
         interrupt = self._pending_interrupt()
         interrupt_view = None
         if interrupt is not None:
-            turn.answer += "Please decide how you want to proceed:\n"
             interrupt_view = self._interrupt_view(interrupt)
+            if not failed:
+                yield {
+                    "type": "text",
+                    "content": "Please decide how you want to proceed:\n",
+                }
+        elif not has_answer and not failed:
+            yield {"type": "text", "content": _EMPTY_ANSWER_MESSAGE}
 
-        yield turn.as_update(done=True, interrupt=interrupt_view)
+        yield {"type": "done", "interrupt": interrupt_view}
