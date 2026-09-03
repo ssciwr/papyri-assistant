@@ -331,26 +331,21 @@ class LangChainAgent:
         """Drive one graph run and forward each content delta exactly once."""
         run = self.agent.stream_events(payload, config=self._config, version="v3")
         for message in run.messages:
-            parser = _InlineReasoningParser(
-                assume_prefilled=getattr(self, "inline_reasoning", False)
-            )
-            has_reasoning_projection = False
-
-            for kind, delta in self._message_deltas(message):
-                if kind == "reasoning":
-                    if not has_reasoning_projection:
-                        has_reasoning_projection = True
-                        yield from self._content_events(parser.finish())
-                    yield {"type": "reasoning", "content": delta}
-                elif has_reasoning_projection:
-                    yield {"type": "text", "content": delta}
+            # Whether text introduces a tool call is only known when that call
+            # appears, so retain just this message's text until it completes.
+            pending_text: list[str] = []
+            for kind, delta in self._classified_deltas(message):
+                if kind == "text":
+                    pending_text.append(delta)
                 else:
-                    yield from self._content_events(parser.feed(delta))
+                    yield {"type": kind, "content": delta}
 
-            if not has_reasoning_projection:
-                yield from self._content_events(parser.finish())
+            tool_calls = message.tool_calls.get() or []
+            text_type = "reasoning" if tool_calls else "text"
+            for delta in pending_text:
+                yield {"type": text_type, "content": delta}
 
-            for tool_call in message.tool_calls.get() or []:
+            for tool_call in tool_calls:
                 args = tool_call.get("args") or {}
                 body = "\n".join(f"{key}: {value}" for key, value in args.items())
                 yield {
@@ -361,12 +356,26 @@ class LangChainAgent:
                     ),
                 }
 
-    @staticmethod
-    def _content_events(
-        deltas: list[tuple[str, str]],
-    ) -> Iterator[dict[str, Any]]:
-        for kind, content in deltas:
-            yield {"type": kind, "content": content}
+    def _classified_deltas(self, message: Any) -> Iterator[tuple[str, str]]:
+        """Classify one model message's text and explicit reasoning deltas."""
+        parser = _InlineReasoningParser(
+            assume_prefilled=getattr(self, "inline_reasoning", False)
+        )
+        has_reasoning_projection = False
+
+        for kind, delta in self._message_deltas(message):
+            if kind == "reasoning":
+                if not has_reasoning_projection:
+                    has_reasoning_projection = True
+                    yield from parser.finish()
+                yield kind, delta
+            elif has_reasoning_projection:
+                yield kind, delta
+            else:
+                yield from parser.feed(delta)
+
+        if not has_reasoning_projection:
+            yield from parser.finish()
 
     @staticmethod
     def _message_deltas(message: Any) -> Iterator[tuple[str, str]]:

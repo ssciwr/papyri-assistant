@@ -133,10 +133,12 @@ def test_turn_stream_adds_finalized_tool_calls_to_reasoning(user_message) -> Non
     graph = FakeGraph(
         [
             FakeStreamMessage(
+                text="Let me search more specifically.",
                 tool_calls=FakeToolCalls(
                     [{"name": "query_sql", "args": {"tm_id": 123456}}]
-                )
-            )
+                ),
+            ),
+            FakeStreamMessage(text="Here is the final answer."),
         ]
     )
 
@@ -145,8 +147,13 @@ def test_turn_stream_adds_finalized_tool_calls_to_reasoning(user_message) -> Non
     reasoning = "".join(
         event["content"] for event in updates if event["type"] == "reasoning"
     )
+    assert "Let me search more specifically." in reasoning
     assert "Using tool: query_sql" in reasoning
     assert "tm_id: 123456" in reasoning
+    assert (
+        "".join(event["content"] for event in updates if event["type"] == "text")
+        == "Here is the final answer."
+    )
 
 
 @pytest.mark.parametrize(
@@ -185,7 +192,7 @@ def test_prefilled_reasoning_never_streams_as_answer_text(user_message) -> None:
     )
 
 
-def test_raw_message_events_keep_reasoning_and_text_interleaved(user_message) -> None:
+def test_raw_message_events_preserve_reasoning_and_text_deltas(user_message) -> None:
     class RawMessage:
         tool_calls = FakeToolCalls()
 
@@ -217,8 +224,8 @@ def test_raw_message_events_keep_reasoning_and_text_interleaved(user_message) ->
 
     assert updates == [
         {"type": "reasoning", "content": "R1"},
-        {"type": "text", "content": "A1"},
         {"type": "reasoning", "content": "R2"},
+        {"type": "text", "content": "A1"},
         {"type": "text", "content": "A2"},
         {"type": "done", "interrupt": None},
     ]
