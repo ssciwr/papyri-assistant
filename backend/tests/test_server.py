@@ -165,6 +165,21 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
         return iter(
             [
                 {"type": "reasoning", "content": "Thinking"},
+                {
+                    "type": "usage",
+                    "usage": {
+                        "input_tokens": 10,
+                        "output_tokens": 4,
+                        "total_tokens": 14,
+                    },
+                    "model_usage": {
+                        "model_call": 1,
+                        "input_tokens": 10,
+                        "output_tokens": 4,
+                        "total_tokens": 14,
+                        "context_window": 100,
+                    },
+                },
                 {"type": "text", "content": "Hello"},
                 {
                     "type": "done",
@@ -194,12 +209,31 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
             "content": "Thinking",
             "interrupt": None,
             "usage": None,
+            "model_usage": None,
+        },
+        {
+            "type": "usage",
+            "content": "",
+            "interrupt": None,
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 4,
+                "total_tokens": 14,
+            },
+            "model_usage": {
+                "model_call": 1,
+                "input_tokens": 10,
+                "output_tokens": 4,
+                "total_tokens": 14,
+                "context_window": 100,
+            },
         },
         {
             "type": "text",
             "content": "Hello",
             "interrupt": None,
             "usage": None,
+            "model_usage": None,
         },
         {
             "type": "done",
@@ -210,6 +244,7 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
                 "output_tokens": 4,
                 "total_tokens": 14,
             },
+            "model_usage": None,
         },
     ]
 

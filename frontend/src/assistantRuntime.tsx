@@ -7,22 +7,28 @@ import {
 } from "@assistant-ui/react";
 
 import { requestDecision, type PendingInterrupt } from "./decisionGate";
+import {
+  formatTokenCheckpoint,
+  type ModelUsage,
+  type TokenUsage
+} from "./tokenUsage";
 
 export const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
-type TokenUsage = {
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
-};
 type ChatStreamEvent =
   | {
       type: "text" | "reasoning" | "replace";
       content: string;
     }
   | {
+      type: "usage";
+      usage: TokenUsage;
+      model_usage: ModelUsage;
+    }
+  | {
       type: "done";
       interrupt?: PendingInterrupt | null;
       usage?: TokenUsage | null;
+      model_usage?: ModelUsage | null;
     };
 
 const modelAdapter: ChatModelAdapter = {
@@ -52,6 +58,8 @@ const modelAdapter: ChatModelAdapter = {
     let text = "";
     let reasoning = "";
     let completed = false;
+    let usage: TokenUsage | null = null;
+    const modelUsage: ModelUsage[] = [];
 
     const parseEvent = (line: string): ChatStreamEvent => {
       try {
@@ -61,13 +69,16 @@ const modelAdapter: ChatModelAdapter = {
           event.type !== "text" &&
           event.type !== "reasoning" &&
           event.type !== "replace" &&
+          event.type !== "usage" &&
           event.type !== "done"
         ) {
           throw new Error("missing stream fields");
         }
 
         if (
-          event.type !== "done" &&
+          (event.type === "text" ||
+            event.type === "reasoning" ||
+            event.type === "replace") &&
           (!("content" in event) || typeof event.content !== "string")
         ) {
           throw new Error("missing stream content");
@@ -107,10 +118,28 @@ const modelAdapter: ChatModelAdapter = {
         case "replace":
           text = event.content;
           break;
+        case "usage":
+          usage = event.usage;
+          reasoning += formatTokenCheckpoint(
+            event.model_usage,
+            modelUsage.at(-1),
+            event.usage
+          );
+          modelUsage.push(event.model_usage);
+          break;
         case "done":
           text = text.trim();
           reasoning = reasoning.trim();
           completed = true;
+          usage = event.usage ?? usage;
+          if (modelUsage.length === 0 && event.model_usage) {
+            reasoning += formatTokenCheckpoint(
+              event.model_usage,
+              undefined,
+              event.usage ?? event.model_usage
+            );
+            modelUsage.push(event.model_usage);
+          }
           if (event.interrupt?.actions.length) {
             requestDecision(event.interrupt);
           }
@@ -118,17 +147,26 @@ const modelAdapter: ChatModelAdapter = {
 
       return {
         content: asContent(),
-        ...(event.type === "done" && event.usage
+        ...(usage
           ? {
               metadata: {
-                steps: [
-                  {
-                    usage: {
-                      inputTokens: event.usage.input_tokens,
-                      outputTokens: event.usage.output_tokens
-                    }
-                  }
-                ]
+                steps:
+                  modelUsage.length > 0
+                    ? modelUsage.map((snapshot) => ({
+                        usage: {
+                          inputTokens: snapshot.input_tokens,
+                          outputTokens: snapshot.output_tokens
+                        }
+                      }))
+                    : [
+                        {
+                          usage: {
+                            inputTokens: usage.input_tokens,
+                            outputTokens: usage.output_tokens
+                          }
+                        }
+                      ],
+                custom: { modelUsage }
               }
             }
           : {})

@@ -49,7 +49,7 @@ def _collect(events: Iterator[dict[str, Any]]) -> dict[str, Any]:
             result[event["type"]] += event["content"]
         elif event["type"] == "replace":
             result["text"] = event["content"]
-        else:
+        elif event["type"] == "done":
             result["interrupt"] = event["interrupt"]
             result["done"] = True
     result["text"] = result["text"].strip()
@@ -179,7 +179,43 @@ def test_turn_stream_accumulates_usage_across_model_calls(user_message) -> None:
         ]
     )
 
-    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
+    agent = _agent(graph)
+    agent.context_window = 1_000
+    updates = list(agent.stream_single_turn(user_message("Question")))
+
+    usage_updates = [event for event in updates if event["type"] == "usage"]
+    assert usage_updates == [
+        {
+            "type": "usage",
+            "usage": {
+                "input_tokens": 120,
+                "output_tokens": 15,
+                "total_tokens": 135,
+            },
+            "model_usage": {
+                "model_call": 1,
+                "input_tokens": 120,
+                "output_tokens": 15,
+                "total_tokens": 135,
+                "context_window": 1_000,
+            },
+        },
+        {
+            "type": "usage",
+            "usage": {
+                "input_tokens": 300,
+                "output_tokens": 35,
+                "total_tokens": 335,
+            },
+            "model_usage": {
+                "model_call": 2,
+                "input_tokens": 180,
+                "output_tokens": 20,
+                "total_tokens": 200,
+                "context_window": 1_000,
+            },
+        },
+    ]
 
     assert updates[-1] == {
         "type": "done",
@@ -189,8 +225,24 @@ def test_turn_stream_accumulates_usage_across_model_calls(user_message) -> None:
             "output_tokens": 35,
             "total_tokens": 335,
         },
+        "model_usage": usage_updates[-1]["model_usage"],
     }
-    assert all(event["type"] != "usage" for event in updates)
+
+
+@pytest.mark.parametrize(
+    ("profile", "expected"),
+    [
+        ({"max_input_tokens": 262_144}, 262_144),
+        ({}, None),
+        ({"max_input_tokens": 0}, None),
+        ({"max_input_tokens": True}, None),
+        (None, None),
+    ],
+)
+def test_model_context_window(profile, expected) -> None:
+    model = type("Model", (), {"profile": profile})()
+
+    assert LangChainAgent._model_context_window(model) == expected
 
 
 @pytest.mark.parametrize(

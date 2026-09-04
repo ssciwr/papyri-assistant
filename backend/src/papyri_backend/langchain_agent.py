@@ -135,6 +135,7 @@ class LangChainAgent:
             if inline_reasoning is None
             else inline_reasoning
         )
+        self.context_window = self._model_context_window(model)
         agent_kwargs = {
             key: value if key == "model" else utils.build(value, {"model": model})
             for key, value in agent_kwargs.items()
@@ -144,6 +145,17 @@ class LangChainAgent:
         self.agent = create_deep_agent(**agent_kwargs)
         self._verify_config(agent_kwargs)
         self.thread_id = str(uuid.uuid4())
+
+    @staticmethod
+    def _model_context_window(model: Any) -> int | None:
+        """Read the configured input limit used by DeepAgents summarization."""
+        profile = getattr(model, "profile", None)
+        if not isinstance(profile, Mapping):
+            return None
+        value = profile.get("max_input_tokens")
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            return None
+        return value
 
     def _verify_config(self, agent_kwargs: Mapping[str, Any]) -> None:
         """Check that names in the config refer to things that exist, e.g., agent tools
@@ -329,10 +341,12 @@ class LangChainAgent:
         return {"type": "respond", "message": message}
 
     def _stream_drive(self, payload: Any) -> Iterator[dict[str, Any]]:
-        """Drive one graph run and forward content plus aggregate token usage."""
+        """Drive one graph run and report usage after each model call."""
         run = self.agent.stream_events(payload, config=self._config, version="v3")
         usage: dict[str, int] | None = None
+        model_call = 0
         for message in run.messages:
+            model_call += 1
             # Whether text introduces a tool call is only known when that call
             # appears, so retain just this message's text until it completes.
             pending_text: list[str] = []
@@ -364,9 +378,15 @@ class LangChainAgent:
                     usage = {field: 0 for field in _TOKEN_FIELDS}
                 for field in _TOKEN_FIELDS:
                     usage[field] += message_usage[field]
-
-        if usage is not None:
-            yield {"type": "usage", **usage}
+                yield {
+                    "type": "usage",
+                    "usage": dict(usage),
+                    "model_usage": {
+                        "model_call": model_call,
+                        **message_usage,
+                        "context_window": getattr(self, "context_window", None),
+                    },
+                }
 
     @staticmethod
     def _message_usage(message: Any) -> dict[str, int] | None:
@@ -496,12 +516,13 @@ class LangChainAgent:
         has_answer = False
         failed = False
         usage = None
+        model_usage = None
 
         try:
             for event in self._stream_drive(payload):
                 if event["type"] == "usage":
-                    usage = {field: event[field] for field in _TOKEN_FIELDS}
-                    continue
+                    usage = event["usage"]
+                    model_usage = event["model_usage"]
                 if event["type"] == "text" and event["content"].strip():
                     has_answer = True
                 yield event
@@ -524,4 +545,5 @@ class LangChainAgent:
         done: dict[str, Any] = {"type": "done", "interrupt": interrupt_view}
         if usage is not None:
             done["usage"] = usage
+            done["model_usage"] = model_usage
         yield done
