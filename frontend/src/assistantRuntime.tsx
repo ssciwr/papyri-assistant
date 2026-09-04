@@ -166,7 +166,7 @@ const modelAdapter: ChatModelAdapter = {
                           }
                         }
                       ],
-                custom: { modelUsage }
+                custom: { modelUsage, tokenUsage: usage }
               }
             }
           : {})

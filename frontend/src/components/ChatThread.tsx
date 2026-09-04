@@ -19,7 +19,12 @@ import {
   type TextMessagePartComponent
 } from "@assistant-ui/react";
 import { readDecision, type DecisionReply } from "../decisionGate";
-import { formatContextUsage, type ModelUsage } from "../tokenUsage";
+import {
+  formatContextUsage,
+  formatInputOutputUsage,
+  type ModelUsage,
+  type TokenUsage
+} from "../tokenUsage";
 
 type MarkdownContentProps = ComponentPropsWithoutRef<"div">;
 type MessageContentComponents = NonNullable<
@@ -217,36 +222,27 @@ function ChatMessage({ role }: { role: string }) {
 }
 
 function FinalTokenUsage() {
-  // Select primitive values so useSyncExternalStore receives stable snapshots.
-  const inputTokens = useAuiState((state) =>
-    (state.message.metadata.steps ?? []).reduce(
-      (total, step) => total + (step.usage?.inputTokens ?? 0),
-      0
-    )
-  );
-  const outputTokens = useAuiState((state) =>
-    (state.message.metadata.steps ?? []).reduce(
-      (total, step) => total + (step.usage?.outputTokens ?? 0),
-      0
-    )
+  const usage = useAuiState(
+    (state) =>
+      (state.message.metadata.custom.tokenUsage as TokenUsage | undefined) ??
+      null
   );
   const isRunning = useAuiState(
     (state) => state.message.status?.type === "running"
   );
-  const totalTokens = inputTokens + outputTokens;
 
-  if (isRunning || totalTokens === 0) {
+  if (isRunning || !usage || usage.total_tokens === 0) {
     return null;
   }
 
   return (
     <div
       className="message-token-usage"
-      title={`${inputTokens.toLocaleString()} input tokens, ${outputTokens.toLocaleString()} output tokens`}
+      title={`${usage.input_tokens.toLocaleString()} total input tokens, ${usage.output_tokens.toLocaleString()} output tokens`}
     >
-      {totalTokens.toLocaleString()} tokens
+      {usage.total_tokens.toLocaleString()} tokens
       <span aria-hidden="true"> · </span>
-      {inputTokens.toLocaleString()} in / {outputTokens.toLocaleString()} out
+      {formatInputOutputUsage(usage)}
     </div>
   );
 }

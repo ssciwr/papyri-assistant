@@ -14,6 +14,7 @@ Papyri Assistant is a research chat application for a papyrology database.
 Assistant responses and reasoning are streamed from LangGraph through the backend to the browser. The foldable reasoning panel embeds a token checkpoint after each model call at its chronological position in the trace, including current context-window pressure, and keeps those checkpoints available after completion. `new` replaces the current session.
 
 Usage checkpoints are provider-reported, so they arrive when each model call finishes rather than for every streamed token. Context percentages use the model profile's `max_input_tokens`; configure that value to match the selected model.
+Cached input still counts toward context occupancy. When every model call reports cache-read details, input statistics split uncached and cached tokens; otherwise they explicitly note that cached tokens are included in the input total.
 
 ## Current status
 

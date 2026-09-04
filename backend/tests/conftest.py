@@ -28,7 +28,7 @@ class FakeStreamMessage:
     text: str = ""
     reasoning: str = ""
     tool_calls: FakeToolCalls = field(default_factory=FakeToolCalls)
-    usage_metadata: dict[str, int] | None = None
+    usage_metadata: dict[str, Any] | None = None
 
     @property
     def output(self) -> SimpleNamespace:

@@ -2,6 +2,7 @@ export type TokenUsage = {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  cached_input_tokens?: number;
 };
 
 export type ModelUsage = TokenUsage & {
@@ -30,7 +31,16 @@ export function formatTokenCheckpoint(
     ? formatContextChange(usage.input_tokens, previous.input_tokens)
     : "";
 
-  return `\n\n---\n\n**Token checkpoint · call ${usage.model_call}:** ${formatContextUsage(usage)}${contextChange} · ${usage.output_tokens.toLocaleString()} output this call · cumulative: ${cumulative.input_tokens.toLocaleString()} input / ${cumulative.output_tokens.toLocaleString()} output / ${cumulative.total_tokens.toLocaleString()} total\n\n`;
+  return `\n\n---\n\n**Token checkpoint · call ${usage.model_call}:** ${formatContextUsage(usage)}${contextChange} · ${usage.output_tokens.toLocaleString()} output this call · cumulative: ${formatInputOutputUsage(cumulative)} (${cumulative.total_tokens.toLocaleString()} total)\n\n`;
+}
+
+export function formatInputOutputUsage(usage: TokenUsage) {
+  if (usage.cached_input_tokens === undefined) {
+    return `${usage.input_tokens.toLocaleString()} in (cached included) / ${usage.output_tokens.toLocaleString()} out`;
+  }
+
+  const uncached = usage.input_tokens - usage.cached_input_tokens;
+  return `${uncached.toLocaleString()} in (+ ${usage.cached_input_tokens.toLocaleString()} cached) / ${usage.output_tokens.toLocaleString()} out`;
 }
 
 function formatContextChange(current: number, previous: number) {

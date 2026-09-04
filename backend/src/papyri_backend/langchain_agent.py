@@ -23,6 +23,7 @@ _THINK_CLOSE = re.compile(r"</\s*think\s*>", re.IGNORECASE)
 _EMPTY_ANSWER_MESSAGE = "No answer was produced. Please try again."
 _PARTIAL_TAG_LIMIT = 64
 _TOKEN_FIELDS = ("input_tokens", "output_tokens", "total_tokens")
+_CACHED_INPUT_FIELD = "cached_input_tokens"
 
 
 class _InlineReasoningParser:
@@ -344,6 +345,8 @@ class LangChainAgent:
         """Drive one graph run and report usage after each model call."""
         run = self.agent.stream_events(payload, config=self._config, version="v3")
         usage: dict[str, int] | None = None
+        cached_input_tokens = 0
+        cache_reporting_complete = True
         model_call = 0
         for message in run.messages:
             model_call += 1
@@ -378,6 +381,16 @@ class LangChainAgent:
                     usage = {field: 0 for field in _TOKEN_FIELDS}
                 for field in _TOKEN_FIELDS:
                     usage[field] += message_usage[field]
+                if cache_reporting_complete:
+                    cached = message_usage.get(_CACHED_INPUT_FIELD)
+                    if cached is None:
+                        cache_reporting_complete = False
+                    else:
+                        cached_input_tokens += cached
+                if cache_reporting_complete:
+                    usage[_CACHED_INPUT_FIELD] = cached_input_tokens
+                else:
+                    usage.pop(_CACHED_INPUT_FIELD, None)
                 yield {
                     "type": "usage",
                     "usage": dict(usage),
@@ -402,6 +415,25 @@ class LangChainAgent:
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 return None
             usage[field] = value
+
+        input_details = raw_usage.get("input_token_details")
+        if isinstance(input_details, Mapping):
+            cache_reads = [
+                value
+                for key, value in input_details.items()
+                if key == "cache_read" or str(key).endswith("_cache_read")
+            ]
+            if (
+                cache_reads
+                and all(
+                    isinstance(value, int)
+                    and not isinstance(value, bool)
+                    and value >= 0
+                    for value in cache_reads
+                )
+                and sum(cache_reads) <= usage["input_tokens"]
+            ):
+                usage[_CACHED_INPUT_FIELD] = sum(cache_reads)
         return usage
 
     def _classified_deltas(self, message: Any) -> Iterator[tuple[str, str]]:

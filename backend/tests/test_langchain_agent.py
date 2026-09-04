@@ -166,6 +166,7 @@ def test_turn_stream_accumulates_usage_across_model_calls(user_message) -> None:
                     "input_tokens": 120,
                     "output_tokens": 15,
                     "total_tokens": 135,
+                    "input_token_details": {"cache_read": 80},
                 },
             ),
             FakeStreamMessage(
@@ -174,6 +175,7 @@ def test_turn_stream_accumulates_usage_across_model_calls(user_message) -> None:
                     "input_tokens": 180,
                     "output_tokens": 20,
                     "total_tokens": 200,
+                    "input_token_details": {"cache_read": 120},
                 },
             ),
         ]
@@ -191,12 +193,14 @@ def test_turn_stream_accumulates_usage_across_model_calls(user_message) -> None:
                 "input_tokens": 120,
                 "output_tokens": 15,
                 "total_tokens": 135,
+                "cached_input_tokens": 80,
             },
             "model_usage": {
                 "model_call": 1,
                 "input_tokens": 120,
                 "output_tokens": 15,
                 "total_tokens": 135,
+                "cached_input_tokens": 80,
                 "context_window": 1_000,
             },
         },
@@ -206,12 +210,14 @@ def test_turn_stream_accumulates_usage_across_model_calls(user_message) -> None:
                 "input_tokens": 300,
                 "output_tokens": 35,
                 "total_tokens": 335,
+                "cached_input_tokens": 200,
             },
             "model_usage": {
                 "model_call": 2,
                 "input_tokens": 180,
                 "output_tokens": 20,
                 "total_tokens": 200,
+                "cached_input_tokens": 120,
                 "context_window": 1_000,
             },
         },
@@ -224,9 +230,42 @@ def test_turn_stream_accumulates_usage_across_model_calls(user_message) -> None:
             "input_tokens": 300,
             "output_tokens": 35,
             "total_tokens": 335,
+            "cached_input_tokens": 200,
         },
         "model_usage": usage_updates[-1]["model_usage"],
     }
+
+
+def test_turn_usage_omits_aggregate_cache_when_any_call_lacks_details(
+    user_message,
+) -> None:
+    graph = FakeGraph(
+        [
+            FakeStreamMessage(
+                usage_metadata={
+                    "input_tokens": 100,
+                    "output_tokens": 10,
+                    "total_tokens": 110,
+                    "input_token_details": {"cache_read": 60},
+                }
+            ),
+            FakeStreamMessage(
+                text="Answer",
+                usage_metadata={
+                    "input_tokens": 150,
+                    "output_tokens": 20,
+                    "total_tokens": 170,
+                },
+            ),
+        ]
+    )
+
+    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
+    usage_updates = [event for event in updates if event["type"] == "usage"]
+
+    assert usage_updates[0]["usage"]["cached_input_tokens"] == 60
+    assert "cached_input_tokens" not in usage_updates[1]["usage"]
+    assert "cached_input_tokens" not in updates[-1]["usage"]
 
 
 @pytest.mark.parametrize(
