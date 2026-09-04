@@ -11,6 +11,9 @@ model:
     base_url: ${LLM_API_URL}
     api_key: ${LLM_API_KEY:-EMPTY}
     temperature: 0.0
+    # Request the provider's token counts on the final streaming chunk.
+    # LangChain does not enable this automatically for custom base URLs.
+    stream_usage: true
     # DeepAgents uses this profile to trigger summarization at 85% and retain the newest 10%.
     # must be adjusted to the LLM_MODEL's context length
     profile:

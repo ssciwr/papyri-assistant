@@ -50,12 +50,32 @@ class ChatResponse(BaseModel):
     interrupt: InterruptView | None = None
 
 
-class ChatStreamEvent(BaseModel):
-    """One content delta or terminal control event."""
+class TokenUsage(BaseModel):
+    """Provider-reported usage accumulated across every LLM call in a turn."""
 
-    type: Literal["text", "reasoning", "replace", "done"]
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    total_tokens: int = Field(ge=0)
+    cached_input_tokens: int | None = Field(
+        default=None, ge=0, exclude_if=lambda value: value is None
+    )
+
+
+class ModelUsage(TokenUsage):
+    """Usage and context pressure for one completed model invocation."""
+
+    model_call: int = Field(ge=1)
+    context_window: int | None = Field(default=None, gt=0)
+
+
+class ChatStreamEvent(BaseModel):
+    """One content delta, usage checkpoint, or terminal control event."""
+
+    type: Literal["text", "reasoning", "replace", "usage", "done"]
     content: str = ""
     interrupt: InterruptView | None = None
+    usage: TokenUsage | None = None
+    model_usage: ModelUsage | None = None
 
 
 def _cors_origins() -> list[str]:

@@ -19,12 +19,19 @@ import {
   type TextMessagePartComponent
 } from "@assistant-ui/react";
 import { readDecision, type DecisionReply } from "../decisionGate";
+import {
+  formatContextUsage,
+  formatInputOutputUsage,
+  type ModelUsage,
+  type TokenUsage
+} from "../tokenUsage";
 
 type MarkdownContentProps = ComponentPropsWithoutRef<"div">;
 type MessageContentComponents = NonNullable<
   ComponentProps<typeof MessagePrimitive.Content>["components"]
 >;
 const StreamReasoningContext = createContext(false);
+const EMPTY_MODEL_USAGE: ModelUsage[] = [];
 
 const MarkdownContent = forwardRef<HTMLDivElement, MarkdownContentProps>(
   ({ children, className, ...props }, ref) => {
@@ -124,6 +131,11 @@ function ReasoningBox({
   text: string;
 }) {
   const [isOpen, setIsOpen] = useState(initiallyOpen);
+  const modelUsage = useAuiState((state) => {
+    const value = state.message.metadata.custom.modelUsage;
+    return Array.isArray(value) ? (value as ModelUsage[]) : EMPTY_MODEL_USAGE;
+  });
+  const latestUsage = modelUsage.at(-1);
 
   useEffect(() => {
     if (!isResponseRunning) {
@@ -141,6 +153,12 @@ function ReasoningBox({
         Reasoning
         {isResponseRunning && (
           <span className="reasoning-summary-status"> in progress...</span>
+        )}
+        {latestUsage && (
+          <span className="reasoning-summary-usage">
+            {" · "}
+            {formatContextUsage(latestUsage)}
+          </span>
         )}
       </summary>
       <div className="reasoning-content">
@@ -197,8 +215,35 @@ function ChatMessage({ role }: { role: string }) {
       <div className="message-label">{role}</div>
       <div className="message-body">
         <MessagePrimitive.Content components={messageContentComponents} />
+        {role === "assistant" && <FinalTokenUsage />}
       </div>
     </MessagePrimitive.Root>
+  );
+}
+
+function FinalTokenUsage() {
+  const usage = useAuiState(
+    (state) =>
+      (state.message.metadata.custom.tokenUsage as TokenUsage | undefined) ??
+      null
+  );
+  const isRunning = useAuiState(
+    (state) => state.message.status?.type === "running"
+  );
+
+  if (isRunning || !usage || usage.total_tokens === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      className="message-token-usage"
+      title={`${usage.input_tokens.toLocaleString()} total input tokens, ${usage.output_tokens.toLocaleString()} output tokens`}
+    >
+      {usage.total_tokens.toLocaleString()} tokens
+      <span aria-hidden="true"> · </span>
+      {formatInputOutputUsage(usage)}
+    </div>
   );
 }
 

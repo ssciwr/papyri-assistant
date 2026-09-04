@@ -22,6 +22,8 @@ _THINK_OPEN = re.compile(r"<\s*think\s*>", re.IGNORECASE)
 _THINK_CLOSE = re.compile(r"</\s*think\s*>", re.IGNORECASE)
 _EMPTY_ANSWER_MESSAGE = "No answer was produced. Please try again."
 _PARTIAL_TAG_LIMIT = 64
+_TOKEN_FIELDS = ("input_tokens", "output_tokens", "total_tokens")
+_CACHED_INPUT_FIELD = "cached_input_tokens"
 
 
 class _InlineReasoningParser:
@@ -134,6 +136,7 @@ class LangChainAgent:
             if inline_reasoning is None
             else inline_reasoning
         )
+        self.context_window = self._model_context_window(model)
         agent_kwargs = {
             key: value if key == "model" else utils.build(value, {"model": model})
             for key, value in agent_kwargs.items()
@@ -143,6 +146,17 @@ class LangChainAgent:
         self.agent = create_deep_agent(**agent_kwargs)
         self._verify_config(agent_kwargs)
         self.thread_id = str(uuid.uuid4())
+
+    @staticmethod
+    def _model_context_window(model: Any) -> int | None:
+        """Read the configured input limit used by DeepAgents summarization."""
+        profile = getattr(model, "profile", None)
+        if not isinstance(profile, Mapping):
+            return None
+        value = profile.get("max_input_tokens")
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            return None
+        return value
 
     def _verify_config(self, agent_kwargs: Mapping[str, Any]) -> None:
         """Check that names in the config refer to things that exist, e.g., agent tools
@@ -328,9 +342,14 @@ class LangChainAgent:
         return {"type": "respond", "message": message}
 
     def _stream_drive(self, payload: Any) -> Iterator[dict[str, Any]]:
-        """Drive one graph run and forward each content delta exactly once."""
+        """Drive one graph run and report usage after each model call."""
         run = self.agent.stream_events(payload, config=self._config, version="v3")
+        usage: dict[str, int] | None = None
+        cached_input_tokens = 0
+        cache_reporting_complete = True
+        model_call = 0
         for message in run.messages:
+            model_call += 1
             # Whether text introduces a tool call is only known when that call
             # appears, so retain just this message's text until it completes.
             pending_text: list[str] = []
@@ -355,6 +374,67 @@ class LangChainAgent:
                         f"{body}\n````\n\n"
                     ),
                 }
+
+            message_usage = self._message_usage(message)
+            if message_usage is not None:
+                if usage is None:
+                    usage = {field: 0 for field in _TOKEN_FIELDS}
+                for field in _TOKEN_FIELDS:
+                    usage[field] += message_usage[field]
+                if cache_reporting_complete:
+                    cached = message_usage.get(_CACHED_INPUT_FIELD)
+                    if cached is None:
+                        cache_reporting_complete = False
+                    else:
+                        cached_input_tokens += cached
+                if cache_reporting_complete:
+                    usage[_CACHED_INPUT_FIELD] = cached_input_tokens
+                else:
+                    usage.pop(_CACHED_INPUT_FIELD, None)
+                yield {
+                    "type": "usage",
+                    "usage": dict(usage),
+                    "model_usage": {
+                        "model_call": model_call,
+                        **message_usage,
+                        "context_window": getattr(self, "context_window", None),
+                    },
+                }
+
+    @staticmethod
+    def _message_usage(message: Any) -> dict[str, int] | None:
+        """Read LangChain's normalized usage from a completed model message."""
+        output = getattr(message, "output", None)
+        raw_usage = getattr(output, "usage_metadata", None)
+        if not isinstance(raw_usage, Mapping):
+            return None
+
+        usage: dict[str, int] = {}
+        for field in _TOKEN_FIELDS:
+            value = raw_usage.get(field)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                return None
+            usage[field] = value
+
+        input_details = raw_usage.get("input_token_details")
+        if isinstance(input_details, Mapping):
+            cache_reads = [
+                value
+                for key, value in input_details.items()
+                if key == "cache_read" or str(key).endswith("_cache_read")
+            ]
+            if (
+                cache_reads
+                and all(
+                    isinstance(value, int)
+                    and not isinstance(value, bool)
+                    and value >= 0
+                    for value in cache_reads
+                )
+                and sum(cache_reads) <= usage["input_tokens"]
+            ):
+                usage[_CACHED_INPUT_FIELD] = sum(cache_reads)
+        return usage
 
     def _classified_deltas(self, message: Any) -> Iterator[tuple[str, str]]:
         """Classify one model message's text and explicit reasoning deltas."""
@@ -467,9 +547,14 @@ class LangChainAgent:
     def _stream_prepared_turn(self, payload: Any) -> Iterator[dict[str, Any]]:
         has_answer = False
         failed = False
+        usage = None
+        model_usage = None
 
         try:
             for event in self._stream_drive(payload):
+                if event["type"] == "usage":
+                    usage = event["usage"]
+                    model_usage = event["model_usage"]
                 if event["type"] == "text" and event["content"].strip():
                     has_answer = True
                 yield event
@@ -489,4 +574,8 @@ class LangChainAgent:
         elif not has_answer and not failed:
             yield {"type": "text", "content": _EMPTY_ANSWER_MESSAGE}
 
-        yield {"type": "done", "interrupt": interrupt_view}
+        done: dict[str, Any] = {"type": "done", "interrupt": interrupt_view}
+        if usage is not None:
+            done["usage"] = usage
+            done["model_usage"] = model_usage
+        yield done
