@@ -9,6 +9,11 @@ import {
 import { requestDecision, type PendingInterrupt } from "./decisionGate";
 
 export const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+type TokenUsage = {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+};
 type ChatStreamEvent =
   | {
       type: "text" | "reasoning" | "replace";
@@ -17,6 +22,7 @@ type ChatStreamEvent =
   | {
       type: "done";
       interrupt?: PendingInterrupt | null;
+      usage?: TokenUsage | null;
     };
 
 const modelAdapter: ChatModelAdapter = {
@@ -110,7 +116,23 @@ const modelAdapter: ChatModelAdapter = {
           }
       }
 
-      return { content: asContent() };
+      return {
+        content: asContent(),
+        ...(event.type === "done" && event.usage
+          ? {
+              metadata: {
+                steps: [
+                  {
+                    usage: {
+                      inputTokens: event.usage.input_tokens,
+                      outputTokens: event.usage.output_tokens
+                    }
+                  }
+                ]
+              }
+            }
+          : {})
+      };
     };
 
     while (true) {

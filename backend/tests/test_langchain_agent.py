@@ -156,6 +156,57 @@ def test_turn_stream_adds_finalized_tool_calls_to_reasoning(user_message) -> Non
     )
 
 
+def test_turn_stream_accumulates_usage_across_model_calls(user_message) -> None:
+    graph = FakeGraph(
+        [
+            FakeStreamMessage(
+                text="I will search.",
+                tool_calls=FakeToolCalls([{"name": "query_sql", "args": {}}]),
+                usage_metadata={
+                    "input_tokens": 120,
+                    "output_tokens": 15,
+                    "total_tokens": 135,
+                },
+            ),
+            FakeStreamMessage(
+                text="Here is the result.",
+                usage_metadata={
+                    "input_tokens": 180,
+                    "output_tokens": 20,
+                    "total_tokens": 200,
+                },
+            ),
+        ]
+    )
+
+    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
+
+    assert updates[-1] == {
+        "type": "done",
+        "interrupt": None,
+        "usage": {
+            "input_tokens": 300,
+            "output_tokens": 35,
+            "total_tokens": 335,
+        },
+    }
+    assert all(event["type"] != "usage" for event in updates)
+
+
+@pytest.mark.parametrize(
+    "usage_metadata",
+    [None, {}, {"input_tokens": 1, "output_tokens": 2}],
+)
+def test_turn_stream_omits_unavailable_or_incomplete_usage(
+    user_message, usage_metadata
+) -> None:
+    graph = FakeGraph([FakeStreamMessage(text="Answer", usage_metadata=usage_metadata)])
+
+    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
+
+    assert updates[-1] == {"type": "done", "interrupt": None}
+
+
 @pytest.mark.parametrize(
     "text",
     ["<think>Plan</think>Answer", "  < THINK >Plan</ Think >Answer"],

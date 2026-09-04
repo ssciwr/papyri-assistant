@@ -166,7 +166,15 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
             [
                 {"type": "reasoning", "content": "Thinking"},
                 {"type": "text", "content": "Hello"},
-                {"type": "done", "interrupt": None},
+                {
+                    "type": "done",
+                    "interrupt": None,
+                    "usage": {
+                        "input_tokens": 10,
+                        "output_tokens": 4,
+                        "total_tokens": 14,
+                    },
+                },
             ]
         )
 
@@ -181,9 +189,28 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
     assert response.headers["cache-control"] == "no-cache"
     assert response.headers["x-accel-buffering"] == "no"
     assert [json.loads(line) for line in response.text.splitlines()] == [
-        {"type": "reasoning", "content": "Thinking", "interrupt": None},
-        {"type": "text", "content": "Hello", "interrupt": None},
-        {"type": "done", "content": "", "interrupt": None},
+        {
+            "type": "reasoning",
+            "content": "Thinking",
+            "interrupt": None,
+            "usage": None,
+        },
+        {
+            "type": "text",
+            "content": "Hello",
+            "interrupt": None,
+            "usage": None,
+        },
+        {
+            "type": "done",
+            "content": "",
+            "interrupt": None,
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 4,
+                "total_tokens": 14,
+            },
+        },
     ]
 
 

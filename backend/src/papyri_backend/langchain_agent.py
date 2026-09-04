@@ -22,6 +22,7 @@ _THINK_OPEN = re.compile(r"<\s*think\s*>", re.IGNORECASE)
 _THINK_CLOSE = re.compile(r"</\s*think\s*>", re.IGNORECASE)
 _EMPTY_ANSWER_MESSAGE = "No answer was produced. Please try again."
 _PARTIAL_TAG_LIMIT = 64
+_TOKEN_FIELDS = ("input_tokens", "output_tokens", "total_tokens")
 
 
 class _InlineReasoningParser:
@@ -328,8 +329,9 @@ class LangChainAgent:
         return {"type": "respond", "message": message}
 
     def _stream_drive(self, payload: Any) -> Iterator[dict[str, Any]]:
-        """Drive one graph run and forward each content delta exactly once."""
+        """Drive one graph run and forward content plus aggregate token usage."""
         run = self.agent.stream_events(payload, config=self._config, version="v3")
+        usage: dict[str, int] | None = None
         for message in run.messages:
             # Whether text introduces a tool call is only known when that call
             # appears, so retain just this message's text until it completes.
@@ -355,6 +357,32 @@ class LangChainAgent:
                         f"{body}\n````\n\n"
                     ),
                 }
+
+            message_usage = self._message_usage(message)
+            if message_usage is not None:
+                if usage is None:
+                    usage = {field: 0 for field in _TOKEN_FIELDS}
+                for field in _TOKEN_FIELDS:
+                    usage[field] += message_usage[field]
+
+        if usage is not None:
+            yield {"type": "usage", **usage}
+
+    @staticmethod
+    def _message_usage(message: Any) -> dict[str, int] | None:
+        """Read LangChain's normalized usage from a completed model message."""
+        output = getattr(message, "output", None)
+        raw_usage = getattr(output, "usage_metadata", None)
+        if not isinstance(raw_usage, Mapping):
+            return None
+
+        usage: dict[str, int] = {}
+        for field in _TOKEN_FIELDS:
+            value = raw_usage.get(field)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                return None
+            usage[field] = value
+        return usage
 
     def _classified_deltas(self, message: Any) -> Iterator[tuple[str, str]]:
         """Classify one model message's text and explicit reasoning deltas."""
@@ -467,9 +495,13 @@ class LangChainAgent:
     def _stream_prepared_turn(self, payload: Any) -> Iterator[dict[str, Any]]:
         has_answer = False
         failed = False
+        usage = None
 
         try:
             for event in self._stream_drive(payload):
+                if event["type"] == "usage":
+                    usage = {field: event[field] for field in _TOKEN_FIELDS}
+                    continue
                 if event["type"] == "text" and event["content"].strip():
                     has_answer = True
                 yield event
@@ -489,4 +521,7 @@ class LangChainAgent:
         elif not has_answer and not failed:
             yield {"type": "text", "content": _EMPTY_ANSWER_MESSAGE}
 
-        yield {"type": "done", "interrupt": interrupt_view}
+        done: dict[str, Any] = {"type": "done", "interrupt": interrupt_view}
+        if usage is not None:
+            done["usage"] = usage
+        yield done
