@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
 
@@ -13,7 +14,7 @@ from pydantic import SecretStr
 
 from papyri_backend import langchain_agent as agent_module
 from papyri_backend.exceptions import InvalidDecision, StaleDecision
-from papyri_backend.langchain_agent import LangChainAgent, TurnOutput
+from papyri_backend.langchain_agent import LangChainAgent
 
 
 def _agent(graph: FakeGraph, thread_id: str = "test-thread") -> LangChainAgent:
@@ -38,6 +39,22 @@ def _interrupt(
             or [{"allowed_decisions": ["approve", "edit", "reject", "respond"]}],
         },
     )
+
+
+def _collect(events: Iterator[dict[str, Any]]) -> dict[str, Any]:
+    """Apply wire deltas as the frontend adapter does."""
+    result = {"text": "", "reasoning": "", "interrupt": None, "done": False}
+    for event in events:
+        if event["type"] in ("text", "reasoning"):
+            result[event["type"]] += event["content"]
+        elif event["type"] == "replace":
+            result["text"] = event["content"]
+        else:
+            result["interrupt"] = event["interrupt"]
+            result["done"] = True
+    result["text"] = result["text"].strip()
+    result["reasoning"] = result["reasoning"].strip()
+    return result
 
 
 # --- construction and configuration -----------------------------------------
@@ -92,40 +109,126 @@ def test_from_config_loads_and_delegates_to_the_constructor(monkeypatch) -> None
 # --- streaming ---------------------------------------------------------------
 
 
-def test_drive_collects_messages_and_uses_the_v3_thread_config() -> None:
+def test_turn_stream_yields_reasoning_and_text_deltas(user_message) -> None:
+    graph = FakeGraph([FakeStreamMessage(text="Answer", reasoning="Plan")])
+    agent = _agent(graph, thread_id="papyrus-thread")
+
+    updates = list(agent.stream_single_turn(user_message("Question")))
+
+    assert updates[0] == {"type": "reasoning", "content": "P"}
+    assert (
+        "".join(event["content"] for event in updates if event["type"] == "text")
+        == "Answer"
+    )
+    assert _collect(iter(updates)) == {
+        "text": "Answer",
+        "reasoning": "Plan",
+        "interrupt": None,
+        "done": True,
+    }
+    assert graph.calls[0]["config"] == {"configurable": {"thread_id": "papyrus-thread"}}
+
+
+def test_turn_stream_adds_finalized_tool_calls_to_reasoning(user_message) -> None:
     graph = FakeGraph(
         [
-            FakeStreamMessage(text="First ", reasoning="Plan: "),
             FakeStreamMessage(
-                text="answer",
+                text="Let me search more specifically.",
                 tool_calls=FakeToolCalls(
                     [{"name": "query_sql", "args": {"tm_id": 123456}}]
                 ),
             ),
+            FakeStreamMessage(text="Here is the final answer."),
         ]
     )
-    agent = _agent(graph, thread_id="papyrus-thread")
-    turn = TurnOutput()
 
-    agent._drive({"messages": []}, turn)
+    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
 
-    assert turn.answer == "First answer"
-    assert "Plan:" in turn.reasoning
-    assert "Using tool: query_sql" in turn.reasoning
-    assert graph.calls == [
-        {
-            "payload": {"messages": []},
-            "config": {"configurable": {"thread_id": "papyrus-thread"}},
-            "version": "v3",
-        }
+    reasoning = "".join(
+        event["content"] for event in updates if event["type"] == "reasoning"
+    )
+    assert "Let me search more specifically." in reasoning
+    assert "Using tool: query_sql" in reasoning
+    assert "tm_id: 123456" in reasoning
+    assert (
+        "".join(event["content"] for event in updates if event["type"] == "text")
+        == "Here is the final answer."
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["<think>Plan</think>Answer", "  < THINK >Plan</ Think >Answer"],
+)
+def test_stream_reclassifies_chunked_inline_reasoning(user_message, text) -> None:
+    graph = FakeGraph([FakeStreamMessage(text=text)])
+
+    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
+
+    assert _collect(iter(updates)) == {
+        "text": "Answer",
+        "reasoning": "Plan",
+        "interrupt": None,
+        "done": True,
+    }
+    assert all("<think>" not in event.get("content", "") for event in updates)
+
+
+def test_prefilled_reasoning_never_streams_as_answer_text(user_message) -> None:
+    graph = FakeGraph([FakeStreamMessage(text="Plan</think>Answer")])
+    agent = _agent(graph)
+    agent.inline_reasoning = True
+
+    updates = list(agent.stream_single_turn(user_message("Question")))
+
+    assert _collect(iter(updates)) == {
+        "text": "Answer",
+        "reasoning": "Plan",
+        "interrupt": None,
+        "done": True,
+    }
+    assert all(
+        event["type"] != "text" or "Plan" not in event["content"] for event in updates
+    )
+
+
+def test_raw_message_events_preserve_reasoning_and_text_deltas(user_message) -> None:
+    class RawMessage:
+        tool_calls = FakeToolCalls()
+
+        def __iter__(self):
+            return iter(
+                [
+                    {
+                        "event": "content-block-delta",
+                        "delta": {"type": "reasoning-delta", "reasoning": "R1"},
+                    },
+                    {
+                        "event": "content-block-delta",
+                        "delta": {"type": "text-delta", "text": "A1"},
+                    },
+                    {
+                        "event": "content-block-delta",
+                        "delta": {"type": "reasoning-delta", "reasoning": "R2"},
+                    },
+                    {
+                        "event": "content-block-delta",
+                        "delta": {"type": "text-delta", "text": "A2"},
+                    },
+                ]
+            )
+
+    graph = FakeGraph([RawMessage()])
+
+    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
+
+    assert updates == [
+        {"type": "reasoning", "content": "R1"},
+        {"type": "reasoning", "content": "R2"},
+        {"type": "text", "content": "A1"},
+        {"type": "text", "content": "A2"},
+        {"type": "done", "interrupt": None},
     ]
-
-
-def test_drive_propagates_graph_failures_to_its_caller() -> None:
-    graph = FakeGraph(error=RuntimeError("stream disconnected"))
-
-    with pytest.raises(RuntimeError, match="stream disconnected"):
-        _agent(graph)._drive({"messages": []}, TurnOutput())
 
 
 # --- complete turns and pauses ----------------------------------------------
@@ -134,12 +237,13 @@ def test_drive_propagates_graph_failures_to_its_caller() -> None:
 def test_an_ordinary_turn_streams_an_answer(user_message) -> None:
     graph = FakeGraph([FakeStreamMessage(text="P.Oxy. XII 1450 is a lease.")])
 
-    answer = _agent(graph).run_single_turn(user_message("Find a lease."))
+    answer = _collect(_agent(graph).stream_single_turn(user_message("Find a lease.")))
 
     assert answer == {
         "text": "P.Oxy. XII 1450 is a lease.",
         "reasoning": "",
         "interrupt": None,
+        "done": True,
     }
 
 
@@ -147,12 +251,13 @@ def test_an_empty_completed_run_returns_a_recoverable_message(user_message) -> N
     """A completed turn without output must be visible to the chat user."""
     graph = FakeGraph([])
 
-    answer = _agent(graph).run_single_turn(user_message("Find a lease."))
+    answer = _collect(_agent(graph).stream_single_turn(user_message("Find a lease.")))
 
     assert answer == {
         "text": "No answer was produced. Please try again.",
         "reasoning": "",
         "interrupt": None,
+        "done": True,
     }
 
 
@@ -162,7 +267,7 @@ def test_a_graph_failure_replaces_partial_output(user_message) -> None:
         error_after_messages=RuntimeError("model failed"),
     )
 
-    answer = _agent(graph).run_single_turn(user_message("Find P.Oxy."))
+    answer = _collect(_agent(graph).stream_single_turn(user_message("Find P.Oxy.")))
 
     assert answer["text"] == "The agent run failed: model failed"
     assert answer["reasoning"] == "Partial reasoning"
@@ -177,7 +282,7 @@ def test_a_paused_turn_includes_an_action_specific_client_view(user_message) -> 
         [FakeStreamMessage(text="I will save the notes.\n")], interrupts=[interrupt]
     )
 
-    answer = _agent(graph).run_single_turn(user_message("Save the notes."))
+    answer = _collect(_agent(graph).stream_single_turn(user_message("Save the notes.")))
 
     assert (
         answer["text"]
@@ -200,12 +305,17 @@ def test_a_valid_decision_resumes_the_paused_turn(decision_reply) -> None:
     graph = FakeGraph([FakeStreamMessage(text="Saved.")], interrupts=[interrupt])
     agent = _agent(graph)
 
-    answer = agent.run_single_turn(decision_reply("interrupt-1"))
+    answer = _collect(agent.stream_single_turn(decision_reply("interrupt-1")))
 
     payload = graph.calls[0]["payload"]
     assert isinstance(payload, Command)
     assert payload.resume == {"decisions": [{"type": "approve"}]}
-    assert answer == {"text": "Saved.", "reasoning": "", "interrupt": None}
+    assert answer == {
+        "text": "Saved.",
+        "reasoning": "",
+        "interrupt": None,
+        "done": True,
+    }
 
 
 def test_an_allowed_rejection_resumes_and_clears_the_old_pause(decision_reply) -> None:
@@ -215,9 +325,11 @@ def test_an_allowed_rejection_resumes_and_clears_the_old_pause(decision_reply) -
     )
     agent = _agent(graph)
 
-    answer = agent.run_single_turn(
-        decision_reply(
-            "interrupt-1", [{"type": "reject", "message": "do not save notes"}]
+    answer = _collect(
+        agent.stream_single_turn(
+            decision_reply(
+                "interrupt-1", [{"type": "reject", "message": "do not save notes"}]
+            )
         )
     )
 
@@ -231,6 +343,7 @@ def test_an_allowed_rejection_resumes_and_clears_the_old_pause(decision_reply) -
         "text": "I will not write the file.",
         "reasoning": "",
         "interrupt": None,
+        "done": True,
     }
 
 
@@ -240,7 +353,7 @@ def test_an_invalid_decision_does_not_run_or_clear_the_pause(decision_reply) -> 
     agent = _agent(graph)
 
     with pytest.raises(InvalidDecision, match="not allowed"):
-        agent.run_single_turn(decision_reply("interrupt-1", [{"type": "reject"}]))
+        agent.stream_single_turn(decision_reply("interrupt-1", [{"type": "reject"}]))
 
     assert graph.calls == []
     assert agent._pending_interrupt() is interrupt

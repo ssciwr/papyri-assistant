@@ -1,14 +1,17 @@
 import { MarkGithubIcon } from "@primer/octicons-react";
+import { useState } from "react";
 import { RuntimeProvider } from "./assistantRuntime";
 import { ChatExportButton } from "./components/ChatExportButton";
 import { ChatThread } from "./components/ChatThread";
 import { DecisionDialog } from "./components/DecisionDialog";
 import { NewSessionButton } from "./components/NewSessionButton";
+import { SettingsPopover } from "./components/SettingsPopover";
 
 const warningBannerText =
   import.meta.env.VITE_WARNING_BANNER_TEXT?.trim() ?? "";
 
 export function App() {
+  const [streamReasoning, setStreamReasoning] = useState(false);
   const chatPanelClassName = [
     "chat-panel",
     warningBannerText ? "chat-panel-with-banner" : ""
@@ -31,6 +34,10 @@ export function App() {
             <div className="chat-header-actions">
               <NewSessionButton />
               <ChatExportButton />
+              <SettingsPopover
+                streamReasoning={streamReasoning}
+                onStreamReasoningChange={setStreamReasoning}
+              />
               <span className="status-pill">Local</span>
               <a
                 className="github-issues-link"
@@ -49,7 +56,7 @@ export function App() {
               {warningBannerText}
             </div>
           )}
-          <ChatThread />
+          <ChatThread streamReasoning={streamReasoning} />
         </section>
       </main>
       <DecisionDialog />

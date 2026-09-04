@@ -11,7 +11,7 @@ Papyri Assistant is a research chat application for a papyrology database.
 - Agent tools inspect/query PostgreSQL and search pgvector with similarity or maximal-marginal-relevance (MMR) retrieval.
 - PostgreSQL database supplies papyrus metadata and transcriptions; a separate script creates embeddings usint the pgvector extension.
 
-The backend returns each complete response rather than streaming HTTP events. `new` replaces the current session  **Non-streaming HTTP responses are temporary and tracked in [#12](https://github.com/ssciwr/papyri-assistant/issues/12).**
+Assistant responses and reasoning are streamed from LangGraph through the backend to the browser. Completed reasoning remains available in the foldable reasoning panel. `new` replaces the current session.
 
 ## Current status
 

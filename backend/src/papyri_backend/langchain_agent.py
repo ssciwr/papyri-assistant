@@ -3,8 +3,7 @@
 import json
 import re
 import uuid
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, get_args
 
@@ -22,81 +21,76 @@ from .utils import utils
 _THINK_OPEN = re.compile(r"<\s*think\s*>", re.IGNORECASE)
 _THINK_CLOSE = re.compile(r"</\s*think\s*>", re.IGNORECASE)
 _EMPTY_ANSWER_MESSAGE = "No answer was produced. Please try again."
+_PARTIAL_TAG_LIMIT = 64
 
 
-def split_think(text: str) -> tuple[str, str]:
-    """Separate an inline reasoning trace from the answer text.
+class _InlineReasoningParser:
+    """Classify inline reasoning without retaining the complete message."""
 
-    Args:
-        text: One model message's text.
+    def __init__(self, *, assume_prefilled: bool):
+        self._mode = "reasoning" if assume_prefilled else "prefix"
+        self._buffer = ""
 
-    Returns:
-        The reasoning trace and the answer. The trace is empty when the message
-        carries none.
-    """
-    # The trace always comes first, so the closing tag is the single point at
-    # which the message switches from reasoning to answer.
-    close_tag = _THINK_CLOSE.search(text)
-    if close_tag is None:
-        return "", text
+    def feed(self, delta: str) -> list[tuple[str, str]]:
+        self._buffer += delta
+        return self._drain()
 
-    # Deployments whose chat template pre-fills the opening tag start the trace
-    # without one, so its absence is not a reason to skip the split.
-    reasoning = _THINK_OPEN.sub("", text[: close_tag.start()], 1)
-    return reasoning, text[close_tag.end() :]
+    def finish(self) -> list[tuple[str, str]]:
+        if not self._buffer:
+            return []
+        kind = "reasoning" if self._mode == "reasoning" else "text"
+        delta, self._buffer = self._buffer, ""
+        return [(kind, delta)]
 
+    def _drain(self) -> list[tuple[str, str]]:
+        if self._mode == "text":
+            delta, self._buffer = self._buffer, ""
+            return [("text", delta)] if delta else []
 
-@dataclass
-class TurnOutput:
-    """What one turn produced, as the client will read it."""
+        if self._mode == "prefix":
+            candidate = self._buffer.lstrip()
+            if not candidate:
+                return []
+            if not candidate.startswith("<"):
+                self._mode = "text"
+                return self._drain()
 
-    answer: str = ""
-    reasoning: str = ""
-    error: str = ""
+            tag_end = candidate.find(">")
+            if tag_end < 0 and len(candidate) <= _PARTIAL_TAG_LIMIT:
+                return []
+            if tag_end >= 0 and _THINK_OPEN.fullmatch(candidate[: tag_end + 1]):
+                self._mode = "reasoning"
+                self._buffer = candidate[tag_end + 1 :]
+                return self._drain()
 
-    def add_message(
-        self, text: str, reasoning: str, tool_calls: list[dict[str, Any]]
-    ) -> None:
-        """Collect one model message.
+            self._mode = "text"
+            return self._drain()
 
-        Args:
-            text: The message's answer text, which may carry a reasoning trace.
-            reasoning: The message's separately reported reasoning trace.
-            tool_calls: The calls the model made in this message.
-        """
-        inline_reasoning, answer = split_think(text)
-        self.reasoning += reasoning + inline_reasoning
-        self.answer += answer
+        close_tag = _THINK_CLOSE.search(self._buffer)
+        if close_tag is not None:
+            reasoning = self._buffer[: close_tag.start()]
+            answer = self._buffer[close_tag.end() :]
+            self._buffer = ""
+            self._mode = "text"
+            return [
+                (kind, text)
+                for kind, text in (("reasoning", reasoning), ("text", answer))
+                if text
+            ]
 
-        for tool_call in tool_calls or []:
-            args = tool_call.get("args") or {}
-            body = "\n".join(f"{k}: {v}" for k, v in args.items())
-            self.reasoning += (
-                f"\n\n````\nUsing tool: {tool_call.get('name')}\n{body}\n````\n\n"
-            )
+        possible_tag = self._buffer.rfind("<")
+        if possible_tag < 0:
+            reasoning, self._buffer = self._buffer, ""
+            return [("reasoning", reasoning)] if reasoning else []
 
-    def as_answer(self, interrupt: dict[str, Any] | None) -> dict[str, Any]:
-        """Render the turn as the chat response.
+        suffix = self._buffer[possible_tag:]
+        if ">" in suffix or len(suffix) > _PARTIAL_TAG_LIMIT:
+            reasoning, self._buffer = self._buffer, ""
+            return [("reasoning", reasoning)]
 
-        Args:
-            interrupt: The interrupt the run is now paused on, if any.
-
-        Returns:
-            The turn's ``text``, ``reasoning`` and ``interrupt``. A completed,
-            uninterrupted turn without answer text receives a recoverable
-            fallback message.
-        """
-        # A run that failed leaves no usable answer, so the error takes its
-        # place rather than trailing whatever was emitted before the failure.
-        text = self.error.strip() or self.answer.strip()
-        if not text and interrupt is None:
-            text = _EMPTY_ANSWER_MESSAGE
-
-        return {
-            "text": text,
-            "reasoning": self.reasoning.strip(),
-            "interrupt": interrupt,
-        }
+        reasoning = self._buffer[:possible_tag]
+        self._buffer = suffix
+        return [("reasoning", reasoning)] if reasoning else []
 
 
 class LangChainAgent:
@@ -114,10 +108,13 @@ class LangChainAgent:
         """
         return cls(**utils.load_config(path))
 
-    def __init__(self, **agent_kwargs: Any):
+    def __init__(self, *, inline_reasoning: bool | None = None, **agent_kwargs: Any):
         """Build a deep agent.
 
         Args:
+            inline_reasoning: Treat untagged text before ``</think>`` as a
+                reasoning trace. When omitted, Qwen models are detected by
+                name; set it explicitly for other model families.
             agent_kwargs: Keyword arguments for ``create_deep_agent``, such as
                 ``model``, ``tools``, ``system_prompt`` and ``interrupt_on``.
                 Nested ``{"type": ..., "kwargs": {...}}`` entries are
@@ -131,6 +128,12 @@ class LangChainAgent:
         # that run a model of their own. Building everything in one pass would
         # instead offer the model to its own constructor.
         model = utils.build(agent_kwargs.get("model"))
+        model_name = getattr(model, "model_name", None) or getattr(model, "model", "")
+        self.inline_reasoning = (
+            "qwen" in str(model_name).lower()
+            if inline_reasoning is None
+            else inline_reasoning
+        )
         agent_kwargs = {
             key: value if key == "model" else utils.build(value, {"model": model})
             for key, value in agent_kwargs.items()
@@ -324,21 +327,96 @@ class LangChainAgent:
             raise InvalidDecision("Responding on behalf of a tool needs a message.")
         return {"type": "respond", "message": message}
 
-    def _drive(self, payload: Any, turn: TurnOutput) -> None:
-        """Run the graph until it finishes or pauses for a decision.
-
-        Args:
-            payload: The graph input, or a resume command.
-            turn: Collects what the run produces.
-        """
-        # Draining the messages is what drives the run forward. A pause ends
-        # the drain and is left in place: the checkpointer holds it until a
-        # decision arrives on a later turn.
+    def _stream_drive(self, payload: Any) -> Iterator[dict[str, Any]]:
+        """Drive one graph run and forward each content delta exactly once."""
         run = self.agent.stream_events(payload, config=self._config, version="v3")
         for message in run.messages:
-            turn.add_message(
-                str(message.text), str(message.reasoning), message.tool_calls.get()
-            )
+            # Whether text introduces a tool call is only known when that call
+            # appears, so retain just this message's text until it completes.
+            pending_text: list[str] = []
+            for kind, delta in self._classified_deltas(message):
+                if kind == "text":
+                    pending_text.append(delta)
+                else:
+                    yield {"type": kind, "content": delta}
+
+            tool_calls = message.tool_calls.get() or []
+            text_type = "reasoning" if tool_calls else "text"
+            for delta in pending_text:
+                yield {"type": text_type, "content": delta}
+
+            for tool_call in tool_calls:
+                args = tool_call.get("args") or {}
+                body = "\n".join(f"{key}: {value}" for key, value in args.items())
+                yield {
+                    "type": "reasoning",
+                    "content": (
+                        f"\n\n````\nUsing tool: {tool_call.get('name')}\n"
+                        f"{body}\n````\n\n"
+                    ),
+                }
+
+    def _classified_deltas(self, message: Any) -> Iterator[tuple[str, str]]:
+        """Classify one model message's text and explicit reasoning deltas."""
+        parser = _InlineReasoningParser(
+            assume_prefilled=getattr(self, "inline_reasoning", False)
+        )
+        has_reasoning_projection = False
+
+        for kind, delta in self._message_deltas(message):
+            if kind == "reasoning":
+                if not has_reasoning_projection:
+                    has_reasoning_projection = True
+                    yield from parser.finish()
+                yield kind, delta
+            elif has_reasoning_projection:
+                yield kind, delta
+            else:
+                yield from parser.feed(delta)
+
+        if not has_reasoning_projection:
+            yield from parser.finish()
+
+    @staticmethod
+    def _message_deltas(message: Any) -> Iterator[tuple[str, str]]:
+        """Yield interleaved reasoning/text deltas from one model message.
+
+        Real v3 message streams expose their raw protocol events through
+        iteration. Consuming those events preserves provider order, unlike
+        draining the reasoning and text projections one after another. The
+        projection fallback keeps lightweight graph fakes and transitional
+        stream implementations compatible.
+        """
+        try:
+            events = iter(message)
+        except TypeError:
+            for delta in message.reasoning:
+                yield "reasoning", str(delta)
+            for delta in message.text:
+                yield "text", str(delta)
+            return
+
+        for event in events:
+            if event.get("event") != "content-block-delta":
+                continue
+            delta = event.get("delta") or event.get("content_block") or {}
+            delta_type = delta.get("type")
+            if delta_type == "reasoning-delta":
+                text = delta.get("reasoning", "")
+                if text:
+                    yield "reasoning", str(text)
+            elif delta_type == "text-delta":
+                text = delta.get("text", "")
+                if text:
+                    yield "text", str(text)
+            elif delta_type == "reasoning":
+                text = delta.get("reasoning", "")
+                if text:
+                    yield "reasoning", str(text)
+            elif delta_type == "text":
+                text = delta.get("text", "")
+                if text:
+                    yield "text", str(text)
 
     @staticmethod
     def _as_decision(text: str) -> dict[str, Any] | None:
@@ -367,29 +445,15 @@ class LangChainAgent:
             return payload
         return None
 
-    def run_single_turn(self, message) -> dict[str, Any]:
-        """Run one turn for a single incoming message.
+    def stream_single_turn(self, message) -> Iterator[dict[str, Any]]:
+        """Stream one turn as text and reasoning deltas.
 
-        A message that carries a decision answers the paused run instead of
-        starting a new one.
-
-        Args:
-            message: An incoming chat message, whose first content part carries
-                the user's text.
-
-        Returns:
-            The agent's non-empty ``text`` answer, its ``reasoning`` trace, and
-            the ``interrupt`` the run is now paused on, if any. A run that failed
-            leaves no answer, so the collected error takes its place. A completed
-            run without answer text receives a recoverable fallback message.
-
-        Raises:
-            StaleDecision: The message answered an interrupt that is not pending.
-            InvalidDecision: The decision was malformed or is not allowed.
+        Decision validation happens before the iterator is returned. This is
+        important for HTTP: stale or invalid decisions can still receive their
+        409/422 status before streaming response headers have been sent.
         """
         text = message["content"][0]["text"]
         decision = self._as_decision(text)
-        turn = TurnOutput()
 
         if decision is not None:
             # Raised before the run is touched, so a refused decision leaves
@@ -398,18 +462,31 @@ class LangChainAgent:
         else:
             payload = {"messages": [{"role": "user", "content": text}]}
 
-        if not turn.error:
-            try:
-                self._drive(payload, turn)
-            except Exception as exc:
-                # Run failures deliberately travel as chat output during local
-                # development.
-                turn.error = f"The agent run failed: {exc}"
+        return self._stream_prepared_turn(payload)
+
+    def _stream_prepared_turn(self, payload: Any) -> Iterator[dict[str, Any]]:
+        has_answer = False
+        failed = False
+
+        try:
+            for event in self._stream_drive(payload):
+                if event["type"] == "text" and event["content"].strip():
+                    has_answer = True
+                yield event
+        except Exception as exc:
+            failed = True
+            yield {"type": "replace", "content": f"The agent run failed: {exc}"}
 
         interrupt = self._pending_interrupt()
+        interrupt_view = None
         if interrupt is not None:
-            turn.answer += "Please decide how you want to proceed:\n"
+            interrupt_view = self._interrupt_view(interrupt)
+            if not failed:
+                yield {
+                    "type": "text",
+                    "content": "Please decide how you want to proceed:\n",
+                }
+        elif not has_answer and not failed:
+            yield {"type": "text", "content": _EMPTY_ANSWER_MESSAGE}
 
-        return turn.as_answer(
-            self._interrupt_view(interrupt) if interrupt is not None else None
-        )
+        yield {"type": "done", "interrupt": interrupt_view}
