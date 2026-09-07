@@ -16,8 +16,12 @@ import {
 export const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 type ChatStreamEvent =
   | {
-      type: "text" | "reasoning" | "replace";
+      type: "text" | "reasoning" | "provisional_reasoning" | "replace";
       content: string;
+    }
+  | {
+      type: "commit_provisional";
+      target: "text" | "reasoning";
     }
   | {
       type: "usage";
@@ -57,6 +61,9 @@ const modelAdapter: ChatModelAdapter = {
     let buffer = "";
     let text = "";
     let reasoning = "";
+    // Ambiguous model text remains visible in reasoning until the completed
+    // model call tells us whether it accompanied a tool call or was an answer.
+    let provisionalReasoning = "";
     let completed = false;
     let usage: TokenUsage | null = null;
     const modelUsage: ModelUsage[] = [];
@@ -68,6 +75,8 @@ const modelAdapter: ChatModelAdapter = {
         if (
           event.type !== "text" &&
           event.type !== "reasoning" &&
+          event.type !== "provisional_reasoning" &&
+          event.type !== "commit_provisional" &&
           event.type !== "replace" &&
           event.type !== "usage" &&
           event.type !== "done"
@@ -78,10 +87,19 @@ const modelAdapter: ChatModelAdapter = {
         if (
           (event.type === "text" ||
             event.type === "reasoning" ||
+            event.type === "provisional_reasoning" ||
             event.type === "replace") &&
           (!("content" in event) || typeof event.content !== "string")
         ) {
           throw new Error("missing stream content");
+        }
+
+        if (
+          event.type === "commit_provisional" &&
+          event.target !== "text" &&
+          event.target !== "reasoning"
+        ) {
+          throw new Error("missing provisional target");
         }
 
         return event as ChatStreamEvent;
@@ -99,7 +117,10 @@ const modelAdapter: ChatModelAdapter = {
 
       // Keep a stable reasoning part throughout the response, including before
       // its first token, so the foldable reasoning panel never disappears.
-      content.push({ type: "reasoning", text: reasoning });
+      content.push({
+        type: "reasoning",
+        text: reasoning + provisionalReasoning
+      });
       if (text || completed) {
         content.push({ type: "text", text });
       }
@@ -114,6 +135,17 @@ const modelAdapter: ChatModelAdapter = {
           break;
         case "reasoning":
           reasoning += event.content;
+          break;
+        case "provisional_reasoning":
+          provisionalReasoning += event.content;
+          break;
+        case "commit_provisional":
+          if (event.target === "text") {
+            text += provisionalReasoning;
+          } else {
+            reasoning += provisionalReasoning;
+          }
+          provisionalReasoning = "";
           break;
         case "replace":
           text = event.content;
@@ -130,6 +162,7 @@ const modelAdapter: ChatModelAdapter = {
         case "done":
           text = text.trim();
           reasoning = reasoning.trim();
+          provisionalReasoning = provisionalReasoning.trim();
           completed = true;
           usage = event.usage ?? usage;
           if (modelUsage.length === 0 && event.model_usage) {

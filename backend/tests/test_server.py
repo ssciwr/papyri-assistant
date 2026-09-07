@@ -164,6 +164,8 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
         assert messages == [{"role": "user", "content": "Hi"}]
         return iter(
             [
+                {"type": "provisional_reasoning", "content": "Considering"},
+                {"type": "commit_provisional", "target": "reasoning"},
                 {"type": "reasoning", "content": "Thinking"},
                 {
                     "type": "usage",
@@ -207,6 +209,21 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
     assert response.headers["cache-control"] == "no-cache"
     assert response.headers["x-accel-buffering"] == "no"
     assert [json.loads(line) for line in response.text.splitlines()] == [
+        {
+            "type": "provisional_reasoning",
+            "content": "Considering",
+            "interrupt": None,
+            "usage": None,
+            "model_usage": None,
+        },
+        {
+            "type": "commit_provisional",
+            "content": "",
+            "target": "reasoning",
+            "interrupt": None,
+            "usage": None,
+            "model_usage": None,
+        },
         {
             "type": "reasoning",
             "content": "Thinking",

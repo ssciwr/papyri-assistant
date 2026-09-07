@@ -27,10 +27,10 @@ _CACHED_INPUT_FIELD = "cached_input_tokens"
 
 
 class _InlineReasoningParser:
-    """Classify inline reasoning without retaining the complete message."""
+    """Classify inline reasoning while streaming ambiguous text provisionally."""
 
     def __init__(self, *, assume_prefilled: bool):
-        self._mode = "reasoning" if assume_prefilled else "prefix"
+        self._mode = "provisional_reasoning" if assume_prefilled else "prefix"
         self._buffer = ""
 
     def feed(self, delta: str) -> list[tuple[str, str]]:
@@ -40,7 +40,13 @@ class _InlineReasoningParser:
     def finish(self) -> list[tuple[str, str]]:
         if not self._buffer:
             return []
-        kind = "reasoning" if self._mode == "reasoning" else "text"
+        kind = {
+            "reasoning": "reasoning",
+            "text": "text",
+            "prefix": "provisional_reasoning",
+            "provisional_text": "provisional_reasoning",
+            "provisional_reasoning": "provisional_reasoning",
+        }[self._mode]
         delta, self._buffer = self._buffer, ""
         return [(kind, delta)]
 
@@ -49,12 +55,19 @@ class _InlineReasoningParser:
             delta, self._buffer = self._buffer, ""
             return [("text", delta)] if delta else []
 
+        if self._mode == "provisional_text":
+            delta, self._buffer = self._buffer, ""
+            return [("provisional_reasoning", delta)] if delta else []
+
         if self._mode == "prefix":
             candidate = self._buffer.lstrip()
             if not candidate:
                 return []
             if not candidate.startswith("<"):
-                self._mode = "text"
+                # Until this model call finishes, ordinary text may still turn
+                # out to be narration accompanying a tool call. Display it in
+                # reasoning now and let the completed message commit it.
+                self._mode = "provisional_text"
                 return self._drain()
 
             tag_end = candidate.find(">")
@@ -65,7 +78,7 @@ class _InlineReasoningParser:
                 self._buffer = candidate[tag_end + 1 :]
                 return self._drain()
 
-            self._mode = "text"
+            self._mode = "provisional_text"
             return self._drain()
 
         close_tag = _THINK_CLOSE.search(self._buffer)
@@ -73,26 +86,40 @@ class _InlineReasoningParser:
             reasoning = self._buffer[: close_tag.start()]
             answer = self._buffer[close_tag.end() :]
             self._buffer = ""
+            was_provisional = self._mode == "provisional_reasoning"
             self._mode = "text"
-            return [
-                (kind, text)
-                for kind, text in (("reasoning", reasoning), ("text", answer))
-                if text
-            ]
+            events = []
+            if reasoning:
+                events.append(
+                    (
+                        "provisional_reasoning" if was_provisional else "reasoning",
+                        reasoning,
+                    )
+                )
+            if was_provisional:
+                events.append(("commit_provisional", "reasoning"))
+            if answer:
+                events.append(("text", answer))
+            return events
 
         possible_tag = self._buffer.rfind("<")
+        kind = (
+            "provisional_reasoning"
+            if self._mode == "provisional_reasoning"
+            else "reasoning"
+        )
         if possible_tag < 0:
             reasoning, self._buffer = self._buffer, ""
-            return [("reasoning", reasoning)] if reasoning else []
+            return [(kind, reasoning)] if reasoning else []
 
         suffix = self._buffer[possible_tag:]
         if ">" in suffix or len(suffix) > _PARTIAL_TAG_LIMIT:
             reasoning, self._buffer = self._buffer, ""
-            return [("reasoning", reasoning)]
+            return [(kind, reasoning)]
 
         reasoning = self._buffer[:possible_tag]
         self._buffer = suffix
-        return [("reasoning", reasoning)] if reasoning else []
+        return [(kind, reasoning)] if reasoning else []
 
 
 class LangChainAgent:
@@ -350,19 +377,23 @@ class LangChainAgent:
         model_call = 0
         for message in run.messages:
             model_call += 1
-            # Whether text introduces a tool call is only known when that call
-            # appears, so retain just this message's text until it completes.
-            pending_text: list[str] = []
+            provisional_open = False
             for kind, delta in self._classified_deltas(message):
-                if kind == "text":
-                    pending_text.append(delta)
+                if kind == "provisional_reasoning":
+                    provisional_open = True
+                    yield {"type": kind, "content": delta}
+                elif kind == "commit_provisional":
+                    provisional_open = False
+                    yield {"type": kind, "target": delta}
                 else:
                     yield {"type": kind, "content": delta}
 
             tool_calls = message.tool_calls.get() or []
-            text_type = "reasoning" if tool_calls else "text"
-            for delta in pending_text:
-                yield {"type": text_type, "content": delta}
+            if provisional_open:
+                yield {
+                    "type": "commit_provisional",
+                    "target": "reasoning" if tool_calls else "text",
+                }
 
             for tool_call in tool_calls:
                 args = tool_call.get("args") or {}
@@ -437,22 +468,35 @@ class LangChainAgent:
         return usage
 
     def _classified_deltas(self, message: Any) -> Iterator[tuple[str, str]]:
-        """Classify one model message's text and explicit reasoning deltas."""
+        """Classify content and emit controls for its provisional segment."""
         parser = _InlineReasoningParser(
             assume_prefilled=getattr(self, "inline_reasoning", False)
         )
         has_reasoning_projection = False
+        provisional_open = False
 
         for kind, delta in self._message_deltas(message):
             if kind == "reasoning":
                 if not has_reasoning_projection:
                     has_reasoning_projection = True
-                    yield from parser.finish()
+                    for parsed_kind, parsed_delta in parser.finish():
+                        provisional_open = parsed_kind == "provisional_reasoning"
+                        yield parsed_kind, parsed_delta
+                    if provisional_open:
+                        # A separately reported reasoning stream makes any text
+                        # that preceded it provider-declared answer text.
+                        yield "commit_provisional", "text"
+                        provisional_open = False
                 yield kind, delta
             elif has_reasoning_projection:
                 yield kind, delta
             else:
-                yield from parser.feed(delta)
+                for parsed_kind, parsed_delta in parser.feed(delta):
+                    if parsed_kind == "provisional_reasoning":
+                        provisional_open = True
+                    elif parsed_kind == "commit_provisional":
+                        provisional_open = False
+                    yield parsed_kind, parsed_delta
 
         if not has_reasoning_projection:
             yield from parser.finish()
@@ -546,6 +590,7 @@ class LangChainAgent:
 
     def _stream_prepared_turn(self, payload: Any) -> Iterator[dict[str, Any]]:
         has_answer = False
+        provisional_has_content = False
         failed = False
         usage = None
         model_usage = None
@@ -557,6 +602,12 @@ class LangChainAgent:
                     model_usage = event["model_usage"]
                 if event["type"] == "text" and event["content"].strip():
                     has_answer = True
+                if event["type"] == "provisional_reasoning":
+                    provisional_has_content |= bool(event["content"].strip())
+                if event["type"] == "commit_provisional":
+                    if event["target"] == "text" and provisional_has_content:
+                        has_answer = True
+                    provisional_has_content = False
                 yield event
         except Exception as exc:
             failed = True

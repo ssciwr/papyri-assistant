@@ -43,10 +43,21 @@ def _interrupt(
 
 def _collect(events: Iterator[dict[str, Any]]) -> dict[str, Any]:
     """Apply wire deltas as the frontend adapter does."""
-    result = {"text": "", "reasoning": "", "interrupt": None, "done": False}
+    result = {
+        "text": "",
+        "reasoning": "",
+        "provisional": "",
+        "interrupt": None,
+        "done": False,
+    }
     for event in events:
         if event["type"] in ("text", "reasoning"):
             result[event["type"]] += event["content"]
+        elif event["type"] == "provisional_reasoning":
+            result["provisional"] += event["content"]
+        elif event["type"] == "commit_provisional":
+            result[event["target"]] += result["provisional"]
+            result["provisional"] = ""
         elif event["type"] == "replace":
             result["text"] = event["content"]
         elif event["type"] == "done":
@@ -54,6 +65,7 @@ def _collect(events: Iterator[dict[str, Any]]) -> dict[str, Any]:
             result["done"] = True
     result["text"] = result["text"].strip()
     result["reasoning"] = result["reasoning"].strip()
+    del result["provisional"]
     return result
 
 
@@ -144,16 +156,18 @@ def test_turn_stream_adds_finalized_tool_calls_to_reasoning(user_message) -> Non
 
     updates = list(_agent(graph).stream_single_turn(user_message("Question")))
 
-    reasoning = "".join(
-        event["content"] for event in updates if event["type"] == "reasoning"
-    )
+    result = _collect(iter(updates))
+    reasoning = result["reasoning"]
     assert "Let me search more specifically." in reasoning
     assert "Using tool: query_sql" in reasoning
     assert "tm_id: 123456" in reasoning
-    assert (
-        "".join(event["content"] for event in updates if event["type"] == "text")
-        == "Here is the final answer."
-    )
+    assert result["text"] == "Here is the final answer."
+    assert updates[0] == {"type": "provisional_reasoning", "content": "L"}
+    assert {
+        "type": "commit_provisional",
+        "target": "reasoning",
+    } in updates
+    assert {"type": "commit_provisional", "target": "text"} in updates
 
 
 def test_turn_stream_accumulates_usage_across_model_calls(user_message) -> None:
@@ -334,6 +348,25 @@ def test_prefilled_reasoning_never_streams_as_answer_text(user_message) -> None:
     )
 
 
+def test_untagged_prefilled_text_streams_as_reasoning_then_becomes_answer(
+    user_message,
+) -> None:
+    graph = FakeGraph([FakeStreamMessage(text="This is the final answer.")])
+    agent = _agent(graph)
+    agent.inline_reasoning = True
+
+    updates = list(agent.stream_single_turn(user_message("Question")))
+
+    assert updates[0] == {"type": "provisional_reasoning", "content": "T"}
+    assert updates[-2] == {"type": "commit_provisional", "target": "text"}
+    assert _collect(iter(updates)) == {
+        "text": "This is the final answer.",
+        "reasoning": "",
+        "interrupt": None,
+        "done": True,
+    }
+
+
 def test_raw_message_events_preserve_reasoning_and_text_deltas(user_message) -> None:
     class RawMessage:
         tool_calls = FakeToolCalls()
@@ -366,8 +399,8 @@ def test_raw_message_events_preserve_reasoning_and_text_deltas(user_message) -> 
 
     assert updates == [
         {"type": "reasoning", "content": "R1"},
-        {"type": "reasoning", "content": "R2"},
         {"type": "text", "content": "A1"},
+        {"type": "reasoning", "content": "R2"},
         {"type": "text", "content": "A2"},
         {"type": "done", "interrupt": None},
     ]
@@ -392,6 +425,21 @@ def test_an_ordinary_turn_streams_an_answer(user_message) -> None:
 def test_an_empty_completed_run_returns_a_recoverable_message(user_message) -> None:
     """A completed turn without output must be visible to the chat user."""
     graph = FakeGraph([])
+
+    answer = _collect(_agent(graph).stream_single_turn(user_message("Find a lease.")))
+
+    assert answer == {
+        "text": "No answer was produced. Please try again.",
+        "reasoning": "",
+        "interrupt": None,
+        "done": True,
+    }
+
+
+def test_a_whitespace_only_provisional_answer_returns_recoverable_message(
+    user_message,
+) -> None:
+    graph = FakeGraph([FakeStreamMessage(text="  \n")])
 
     answer = _collect(_agent(graph).stream_single_turn(user_message("Find a lease.")))
 

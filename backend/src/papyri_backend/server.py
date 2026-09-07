@@ -69,10 +69,21 @@ class ModelUsage(TokenUsage):
 
 
 class ChatStreamEvent(BaseModel):
-    """One content delta, usage checkpoint, or terminal control event."""
+    """One content delta, provisional commit, usage, or terminal event."""
 
-    type: Literal["text", "reasoning", "replace", "usage", "done"]
+    type: Literal[
+        "text",
+        "reasoning",
+        "provisional_reasoning",
+        "commit_provisional",
+        "replace",
+        "usage",
+        "done",
+    ]
     content: str = ""
+    target: Literal["text", "reasoning"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     interrupt: InterruptView | None = None
     usage: TokenUsage | None = None
     model_usage: ModelUsage | None = None
