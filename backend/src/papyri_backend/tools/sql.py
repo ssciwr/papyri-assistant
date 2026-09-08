@@ -1,8 +1,17 @@
 """Let the agent inspect and query the postgres database."""
 
 from langchain.tools import tool
+from sql_data_guard import verify_sql
 
 from ..session import connection
+
+
+_SCHEMA_QUERY = """
+    SELECT table_name, column_name, data_type
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+    ORDER BY table_name, ordinal_position
+    """
 
 
 def _rows(query: str) -> list[tuple] | str:
@@ -57,17 +66,29 @@ def inspect_sql() -> str:
     Returns:
         One ``table.column: datatype`` line per column, over every table.
     """
-    rows = _rows(
-        """
-        SELECT table_name, column_name, data_type
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-        ORDER BY table_name, ordinal_position
-        """
-    )
+    rows = _rows(_SCHEMA_QUERY)
     if isinstance(rows, str):
         return rows
     return "\n".join(f"{table}.{column}: {kind}" for table, column, kind in rows)
+
+
+def _guard_config() -> dict | str:
+    rows = _rows(_SCHEMA_QUERY)
+    if isinstance(rows, str):
+        return rows
+
+    columns_by_table: dict[str, list[str]] = {}
+    for table, column, _ in rows:
+        columns_by_table.setdefault(table, []).append(column)
+    if not columns_by_table:
+        return "Error, SQL query validation failed: no public tables are available"
+
+    return {
+        "tables": [
+            {"table_name": table, "columns": columns}
+            for table, columns in columns_by_table.items()
+        ]
+    }
 
 
 @tool(parse_docstring=True)
@@ -78,6 +99,16 @@ def query_sql(query: str) -> list[tuple] | str:
         query: The sql statement to run.
 
     Returns:
-        The rows the query returned, or the error text if it failed.
+        The rows the query returned, or the error text if validation or execution
+        failed.
     """
-    return _rows(query.strip())
+    query = query.strip()
+    config = _guard_config()
+    if isinstance(config, str):
+        return config
+
+    validation = verify_sql(query, config, dialect="postgres")
+    if not validation["allowed"]:
+        errors = "; ".join(sorted(validation["errors"]))
+        return f"Error, SQL query validation failed: {errors}"
+    return _rows(query)
