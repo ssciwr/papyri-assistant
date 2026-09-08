@@ -1,6 +1,6 @@
 # Papyri Assistant
 
-> **Work in progress.** Local chat, agent, SQL, and vector-retrieval paths are implemented and unit tested. Database ingestion, vector-table selection, and embedding-provider setup still require manual configuration.
+> **Work in progress.** Local chat, agent, SQL, and vector-retrieval paths are implemented and unit tested. The database and vector tables must be provisioned outside this application.
 
 ## Overview
 
@@ -9,7 +9,7 @@ Papyri Assistant is a research chat application for a papyrology database.
 - React-based web frontend provides chat, session reset, export, reasoning display, and approve/reject dialogs for interrupted actions.
 - FastAPI-based python backend hosts a LangChain/DeepAgents agent with basic agent harness.
 - Agent tools inspect/query PostgreSQL and search pgvector with similarity or maximal-marginal-relevance (MMR) retrieval.
-- PostgreSQL database supplies papyrus metadata and transcriptions; a separate script creates embeddings usint the pgvector extension.
+- PostgreSQL supplies externally managed papyrus data and pgvector embeddings.
 
 Assistant responses and reasoning are streamed from LangGraph through the backend to the browser. Completed reasoning remains available in the foldable reasoning panel. `new` replaces the current session.
 
@@ -18,7 +18,7 @@ Assistant responses and reasoning are streamed from LangGraph through the backen
 Implemented:
 
 - configurable OpenAI-compatible chat models;
-- Hugging Face and VoyageAI embedding/retrieval configurations;
+- Hugging Face and VoyageAI query-embedding/retrieval configurations;
 - SQL inspection/query tools and four pgvector search tools;
 - resumable approve/reject dialogs for configured agent actions;
 - development and TLS-enabled production Compose stacks;
@@ -29,7 +29,6 @@ Known limitations:
 - One in-memory, process-global session: users are not isolated, checkpoints are not durable, and backend restarts lose the conversation.
 - No authentication or authorization.
 - The SQL tool accepts free-form SQL, validates it against the public schema with `sql-data-guard`, and runs it through a database login limited to `SELECT`. This is database-wide read access, not per-user authorization.
-- Embedding generation is a host-side script, not a Compose job; `backend/scripts` is not copied into the backend image.
 - Real-service `integration` and `live_model` test lanes are marked but not yet implemented.
 
 ## Requirements
@@ -47,22 +46,19 @@ YAML `type` values are imported and constructed at runtime. `${VARIABLE}` and `$
 | File | Purpose |
 | --- | --- |
 | `backend/configs/default_langchain_agent.yaml` | Model, prompt, tools, middleware, interrupts, filesystem permissions, and Deep Agents backends. |
-| `backend/configs/default_langchain_embedder.yaml` | Qwen3 embedding model, splitter, and current `embeddings` table contract. |
-| `backend/configs/default_langchain_retriever.yaml` | Qwen3 retriever for the current `embeddings` table. **IF YOU USE A DATABASE WITH EMBEDDINGS BUILT VIA `scripts/compute_embeddings.py` WITH `default_langchain_embedder.yaml`, USE THIS ONE.** |
+| `backend/configs/default_langchain_retriever.yaml` | Qwen3 retriever for an externally populated `embeddings` table containing 2000-dimensional Qwen3 vectors. |
 | `backend/configs/legacy_langchain_retriever.yaml` | VoyageAI retriever for Scrapyrus `transcription_embeddings`, mapped directly to Scrapyrus columns and filtered to `voyage-4-large`. **IF YOU USE A DATABASE WITH SCRAPYRUS-BUILT VOYAGEAI EMBEDDINGS, USE THIS ONE. CURRENTLY UNTESTED.** |
-| `backend/configs/voyage_ai_langchain_embedder.yaml` | VoyageAI `voyage-4-large` ingestion with 1024-dimensional vectors. |
-| `backend/configs/voyage_ai_langchain_retriever.yaml` | Matching VoyageAI retriever for the current `embeddings` table. **IF YOU USE A DATABASE WITH EMBEDDINGS BUILT VIA `scripts/compute_embeddings.py` WITH `voyage_ai_langchain_embedder.yaml`, USE THIS ONE.** |
+| `backend/configs/voyage_ai_langchain_retriever.yaml` | VoyageAI retriever for an externally populated `embeddings` table containing 1024-dimensional `voyage-4-large` vectors. |
 
 The config files used can be overridden in the compose files. Per default, the `default_langchain_agent` and voyage-ai configs will be used.
 
-**The embedding and retrieval configurations must agree on provider, model, dimensions, and table columns. Never query vectors with a different model, even when dimensions match.**
+**The query-embedding model and stored vectors must agree on provider, model, and dimensions. Never query vectors with a different model, even when dimensions match.**
 
 ### Compose defaults
 
 - Development `compose.yaml` selects `voyage_ai_langchain_retriever.yaml`, which reads the Papyri Assistant `embeddings` table.
 - Production `compose.prod.yaml` selects `legacy_langchain_retriever.yaml`, which reads Scrapyrus `transcription_embeddings` directly.
-- Both VoyageAI paths require `VOYAGE_API_KEY` and vectors created with `voyage-4-large` at 1024 dimensions.
-- `compose.yaml` currently injects `EMBEDDER_CONFIG`, but the host-side ingestion script reads `EMBEDDINGS_CONFIG`; pass the latter explicitly when running the script.
+- Both VoyageAI paths require `VOYAGE_API_KEY` and stored `voyage-4-large` vectors at 1024 dimensions.
 
 **The current retriever can query only one embedding table at a time because one configuration creates one `PGVectorStore`. The shipped Scrapyrus config queries `transcription_embeddings`; change its `table_name` to `translation_embeddings` to query translations instead. Both tables cannot be queried concurrently by the current backend. This is a temporary limitation and will change in the future (tracked [here](https://github.com/ssciwr/papyri-assistant/issues/21))**
 
@@ -110,27 +106,16 @@ The application only reads `POSTGRES_URL`. For host application commands, explic
 
 ## Database and embeddings
 
-The backend does not create the Scrapyrus source schema. PostgreSQL must have pgvector plus the Scrapyrus `transcriptions`, `orig_dates`, and `orig_places` tables used by the ingestion query.
+Papyri Assistant never creates, populates, resets, or migrates application data. PostgreSQL must already contain the source and vector tables selected by the agent and retriever configurations.
 
-### Start and populate development PostgreSQL
+### Start development PostgreSQL
 
 ```sh
 cp .env.example .env
 docker compose up -d postgres
-
-docker compose run --build --rm scrapyrus scrapyrus metadata ingest
-docker compose run --build --rm scrapyrus scrapyrus transcriptions ingest
 ```
 
-To ingest a host `idp.data` checkout:
-
-```sh
-docker compose run --build --rm \
-  -v /path/to/idp.data:/data/idp.data:ro \
-  scrapyrus scrapyrus --idp-data /data/idp.data metadata ingest
-```
-
-Development PostgreSQL is exposed only at `127.0.0.1:55432` and stored in `${POSTGRES_DATA_DIR:-./data/postgres}`. Production PostgreSQL is private to its Compose network.
+The bundled service starts an empty pgvector-enabled database and the read-only login only; database content must be supplied through infrastructure outside this repository. Development PostgreSQL is exposed only at `127.0.0.1:55432` and stored in `${POSTGRES_DATA_DIR:-./data/postgres}`. Production PostgreSQL is private to its Compose network.
 
 The PostgreSQL image creates `papyri_query_reader` during first-time database initialization. The login has `CONNECT`, public-schema `USAGE`, and `SELECT` on current and future tables owned by `scrapyrus`; it has no table-write or sequence privileges. Initialization scripts do not run again for an existing `${POSTGRES_DATA_DIR}`. To install or refresh the role on an existing development database, run:
 
@@ -142,25 +127,10 @@ docker compose up -d --force-recreate backend
 
 ### Vector schemas
 
-- **Papyri Assistant:** `embeddings`, created by `LangChainEmbeddings`, with deterministic chunk IDs and explicit content, vector, metadata, source, and transcription-ID columns. The default and VoyageAI retriever configs target this table with their matching models.
+- **Generic:** `embeddings`, an externally managed table with explicit content, vector, metadata, source, and transcription-ID columns. The default and VoyageAI retriever configs target this table with their matching models.
 - **Scrapyrus:** `transcription_embeddings` and `translation_embeddings`. Each row contains `xml_id`, `model_name`, `chunk_index`, `source_path`, `tm_id`, `language`, `document_text`, `input_hash`, `embedding`, and `updated_at`. `legacy_langchain_retriever.yaml` directly maps LangChain to `transcription_embeddings` and filters retrieval to `voyage-4-large`.
 
 Retrievers only open existing vector tables; they do not create them. **Only one of the Scrapyrus embedding tables can be selected at a time with the current single-retriever backend.**
-
-### Build the current vector table
-
-```sh
-python -m pip install -e backend
-export POSTGRES_HOST_URL=postgresql://scrapyrus:scrapyrus@127.0.0.1:55432/scrapyrus
-cd backend
-POSTGRES_URL="$POSTGRES_HOST_URL" \
-EMBEDDINGS_CONFIG=configs/default_langchain_embedder.yaml \
-python scripts/compute_embeddings.py
-```
-
-For VoyageAI, replace the config with `configs/voyage_ai_langchain_embedder.yaml` and export `VOYAGE_API_KEY`.
-
-The default Qwen pipeline reads non-empty Scrapyrus transcriptions/translations, joins dates and places, chunks text, embeds with `Qwen/Qwen3-Embedding-8B` at 2000 dimensions, and stores source/transcription metadata. Changing the model, dimensions, splitter, or schema generally requires rebuilding the table and selecting the matching retriever.
 
 ## Run locally
 
@@ -175,7 +145,7 @@ POSTGRES_URL="$POSTGRES_HOST_URL" npm run dev
 - Frontend: <http://localhost:5173>
 - Backend: <http://localhost:3001>
 
-Startup initializes the agent, embedding model, retriever, and database connection. A missing table/configuration or first model download delays or fails `/health` readiness.
+Startup initializes the agent, query-embedding model, retriever, and read-only database connection. A missing table/configuration or first model download delays or fails `/health` readiness.
 
 ## Run development Compose
 
@@ -188,7 +158,7 @@ docker compose up
 - Frontend: <http://localhost:5173>
 - Backend: <http://localhost:3001>
 
-This uses source bind mounts and a persistent Hugging Face cache. The Scrapyrus tool container runs only through explicit `docker compose run` commands.
+This uses source bind mounts and a persistent Hugging Face cache.
 
 ## Run production Compose
 

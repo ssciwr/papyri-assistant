@@ -6,7 +6,7 @@ embeddings:
     output_dimension: &embedding_dim 1024
     batch_size: 64
 
-# Must match voyage_ai_langchain_embeddings.yaml.
+# The table must be provisioned and populated outside this application.
 store_kwargs:
   table_name: embeddings
   schema_name: public

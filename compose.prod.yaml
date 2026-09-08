@@ -18,22 +18,6 @@ services:
       - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
 
-  scrapyrus:
-    build: ./docker/scrapyrus
-    profiles:
-      - tools
-    depends_on:
-      postgres:
-        condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      SCRAPYRUS_DATABASE_URL: postgresql://scrapyrus:scrapyrus@postgres:5432/scrapyrus
-    stdin_open: true
-    tty: true
-    working_dir: /workspace
-    command: sleep infinity
-
   backend:
     build:
       context: .
