@@ -9,8 +9,22 @@ def use_connection(monkeypatch: pytest.MonkeyPatch, connection: Any) -> None:
     monkeypatch.setattr(sql, "connection", lambda: connection)
 
 
+@pytest.fixture
+def guard_config(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    config = {
+        "tables": [
+            {
+                "table_name": "transcriptions",
+                "columns": ["tm_id", "source_path"],
+            }
+        ]
+    }
+    monkeypatch.setattr(sql, "_guard_config", lambda: config)
+    return config
+
+
 def test_query_sql_strips_whitespace_returns_rows_and_rolls_back(
-    monkeypatch: pytest.MonkeyPatch, fake_connection: Any
+    monkeypatch: pytest.MonkeyPatch, fake_connection: Any, guard_config: Any
 ) -> None:
     rows = [(12345, "P.Oxy. 1.1")]
     fake_connection.cursor.rows = rows
@@ -23,6 +37,69 @@ def test_query_sql_strips_whitespace_returns_rows_and_rolls_back(
     assert result == rows
     assert fake_connection.queries == ["SELECT tm_id, source_path FROM transcriptions"]
     assert fake_connection.rollback_calls == 1
+
+
+def test_guard_config_uses_public_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sql,
+        "_rows",
+        lambda query: [
+            ("orig_dates", "date_id", "integer"),
+            ("transcriptions", "tm_id", "integer"),
+            ("transcriptions", "source_path", "text"),
+        ],
+    )
+
+    assert sql._guard_config() == {
+        "tables": [
+            {"table_name": "orig_dates", "columns": ["date_id"]},
+            {
+                "table_name": "transcriptions",
+                "columns": ["tm_id", "source_path"],
+            },
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    ("schema_result", "expected"),
+    [
+        ("Error, schema unavailable", "Error, schema unavailable"),
+        ([], "Error, SQL query validation failed: no public tables are available"),
+    ],
+)
+def test_guard_config_returns_schema_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    schema_result: list[tuple] | str,
+    expected: str,
+) -> None:
+    monkeypatch.setattr(sql, "_rows", lambda query: schema_result)
+
+    assert sql._guard_config() == expected
+
+
+def test_query_sql_returns_guard_config_errors(
+    monkeypatch: pytest.MonkeyPatch, fake_connection: Any
+) -> None:
+    monkeypatch.setattr(sql, "_guard_config", lambda: "Error, schema unavailable")
+    use_connection(monkeypatch, fake_connection)
+
+    assert sql.query_sql.invoke({"query": "SELECT 1"}) == "Error, schema unavailable"
+    assert fake_connection.queries == []
+
+
+def test_query_sql_rejects_invalid_query_before_execution(
+    monkeypatch: pytest.MonkeyPatch, fake_connection: Any, guard_config: Any
+) -> None:
+    use_connection(monkeypatch, fake_connection)
+
+    result = sql.query_sql.invoke({"query": "DELETE FROM transcriptions"})
+
+    assert (
+        result == "Error, SQL query validation failed: DELETE statement is not allowed"
+    )
+    assert fake_connection.queries == []
+    assert fake_connection.rollback_calls == 0
 
 
 def test_list_sql_tables_formats_one_table_per_line(
@@ -91,6 +168,7 @@ def test_schema_tools_return_query_errors(
 def test_query_sql_rolls_back_and_returns_errors(
     monkeypatch: pytest.MonkeyPatch,
     fake_connection: Any,
+    guard_config: Any,
     failure_field: str,
     message: str,
 ) -> None:
@@ -106,7 +184,9 @@ def test_query_sql_rolls_back_and_returns_errors(
     assert fake_connection.rollback_calls == 1
 
 
-def test_query_sql_returns_connection_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_query_sql_returns_connection_errors(
+    monkeypatch: pytest.MonkeyPatch, guard_config: Any
+) -> None:
     def fail_to_connect() -> Any:
         raise RuntimeError("session has no connection")
 
