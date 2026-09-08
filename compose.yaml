@@ -7,6 +7,7 @@ services:
       POSTGRES_DB: scrapyrus
       POSTGRES_USER: scrapyrus
       POSTGRES_PASSWORD: scrapyrus
+      PAPYRI_QUERY_PASSWORD: ${PAPYRI_QUERY_PASSWORD:-papyri-reader}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U scrapyrus -d scrapyrus"]
       interval: 5s
@@ -14,6 +15,7 @@ services:
       retries: 12
     volumes:
       - ${POSTGRES_DATA_DIR:-./data/postgres}:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:55432:5432"
   scrapyrus:
@@ -47,7 +49,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_API_URL: ${LLM_API_URL:-}
       LLM_MODEL: ${LLM_MODEL:-}
-      POSTGRES_URL: postgresql://scrapyrus:scrapyrus@postgres:5432/scrapyrus
+      POSTGRES_URL: postgresql://papyri_query_reader:${PAPYRI_QUERY_PASSWORD:-papyri-reader}@postgres:5432/scrapyrus
       HF_TOKEN: ${HF_TOKEN:-}
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
       AGENT_CONFIG:  /app/backend/configs/default_langchain_agent.yaml
