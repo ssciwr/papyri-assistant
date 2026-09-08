@@ -3,11 +3,11 @@ embeddings:
   kwargs:
     model_name: Qwen/Qwen3-Embedding-8B
     model_kwargs:
-      truncate_dim: 2000 # Must match ingestion vectors in default_langchain_embedder.yaml.
+      truncate_dim: 2000 # Must match the vectors in the existing table.
     encode_kwargs:
       normalize_embeddings: True
 
-# Must match the table contract in default_langchain_embedder.yaml.
+# The table must be provisioned and populated outside this application.
 store_kwargs:
   table_name: embeddings
   schema_name: public

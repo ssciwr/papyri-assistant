@@ -19,10 +19,8 @@ from papyri_backend.utils import utils
 
 CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 AGENT_CONFIG = CONFIGS / "default_langchain_agent.yaml"
-EMBEDDER_CONFIG = CONFIGS / "default_langchain_embedder.yaml"
 RETRIEVER_CONFIG = CONFIGS / "default_langchain_retriever.yaml"
 LEGACY_RETRIEVER_CONFIG = CONFIGS / "legacy_langchain_retriever.yaml"
-VOYAGE_EMBEDDER_CONFIG = CONFIGS / "voyage_ai_langchain_embedder.yaml"
 VOYAGE_RETRIEVER_CONFIG = CONFIGS / "voyage_ai_langchain_retriever.yaml"
 
 
@@ -43,18 +41,14 @@ def voyage_env(monkeypatch) -> None:
     "path",
     [
         AGENT_CONFIG,
-        EMBEDDER_CONFIG,
         RETRIEVER_CONFIG,
         LEGACY_RETRIEVER_CONFIG,
-        VOYAGE_EMBEDDER_CONFIG,
         VOYAGE_RETRIEVER_CONFIG,
     ],
     ids=[
         "agent",
-        "embedder",
         "retriever",
         "legacy-retriever",
-        "voyage-embedder",
         "voyage-retriever",
     ],
 )
@@ -69,34 +63,6 @@ def test_agent_config_loads(llm_env) -> None:
 
     assert config["system_prompt"].startswith("You are a concise")
     assert config["model"]["kwargs"]["model"] == "test-model"
-
-
-def test_embedder_config_loads() -> None:
-    config = utils.load_config(EMBEDDER_CONFIG)
-
-    assert callable(config["embeddings"]["type"])
-    assert config["embeddings"]["kwargs"]["model_kwargs"] == {"truncate_dim": 2000}
-    assert config["store_kwargs"] == {
-        "table_name": "embeddings",
-        "schema_name": "public",
-        "vector_size": 2000,
-        "content_column": "content",
-        "embedding_column": "embedding",
-        "id_column": {
-            "name": "chunk_id",
-            "data_type": "TEXT",
-            "nullable": False,
-        },
-        "metadata_columns": [
-            {"name": "source", "data_type": "TEXT", "nullable": False},
-            {
-                "name": "transcription_id",
-                "data_type": "TEXT",
-                "nullable": False,
-            },
-        ],
-        "metadata_json_column": "metadata",
-    }
 
 
 def test_retriever_config_loads() -> None:
@@ -165,9 +131,8 @@ def test_legacy_retriever_config_maps_the_scrapyrus_schema(voyage_env) -> None:
     }
 
 
-@pytest.mark.parametrize("path", [VOYAGE_EMBEDDER_CONFIG, VOYAGE_RETRIEVER_CONFIG])
-def test_voyage_configs_build_matching_embeddings(path: Path, voyage_env) -> None:
-    config = utils.load_config(path)
+def test_voyage_config_builds_matching_embeddings(voyage_env) -> None:
+    config = utils.load_config(VOYAGE_RETRIEVER_CONFIG)
     embeddings = utils.build(config["embeddings"])
 
     assert embeddings.model == "voyage-4-large"

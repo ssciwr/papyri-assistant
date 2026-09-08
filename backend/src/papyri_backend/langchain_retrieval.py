@@ -44,7 +44,7 @@ class LangChainRetriever:
 
         Args:
             embeddings: The embeddings model queries are embedded with.
-            store_kwargs: Table settings shared with ``LangChainEmbeddings``.
+            store_kwargs: Settings for the externally provisioned vector table.
             similarity_search_kwargs: Keyword arguments applied to every
                 similarity search, such as the number of results ``k``.
             mmr_search_kwargs: Keyword arguments applied to every maximal
@@ -82,8 +82,8 @@ class LangChainRetriever:
         self.similarity_search_kwargs = similarity_search_kwargs or {}
         self.mmr_search_kwargs = mmr_search_kwargs or {}
 
-        # PGVectorStore opens an existing table. Table creation belongs to the
-        # embedding builder so serving a query can never create or reset data.
+        # PGVectorStore opens an existing table; database provisioning is outside
+        # this application's scope.
         vector_engine = PGEngine.from_connection_string(
             make_url(ps_conn).set(drivername="postgresql+psycopg")
         )
