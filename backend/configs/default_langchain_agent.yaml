@@ -28,8 +28,6 @@ tools:
   # semantic search tools
   - papyri_backend.tools.pgvec.similarity_search
   - papyri_backend.tools.pgvec.mmr_search
-  - papyri_backend.tools.pgvec.similarity_search_by_vec
-  - papyri_backend.tools.pgvec.mmr_search_by_vec
 
 # Deep Agents installs its own model-aware SummarizationMiddleware. Do not add
 # LangChain's middleware here: a same-named entry replaces the enhanced default.

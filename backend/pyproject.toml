@@ -13,6 +13,7 @@ dependencies = [
     "langchain>=1.0.0",
     "langchain-core>=1.0.0",
     "langchain-huggingface>=1.2.2",
+    "langchain-mistralai>=1.1.2",
     "langchain-openai>=1.0.0",
     "langchain-postgres>=0.0.17",
     "langchain-voyageai>=0.4.1",
