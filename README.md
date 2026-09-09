@@ -47,6 +47,7 @@ YAML `type` values are imported and constructed at runtime. `${VARIABLE}` and `$
 | File | Purpose |
 | --- | --- |
 | `backend/configs/default_langchain_agent.yaml` | Model, prompt, tools, middleware, interrupts, filesystem permissions, and Deep Agents backends. |
+| `backend/skills/` | The agent's only skill source. Put each skill in `<skill-name>/SKILL.md`; use `skills.md.template` as a starting point. |
 | `backend/configs/default_langchain_embedder.yaml` | Qwen3 embedding model, splitter, and current `embeddings` table contract. |
 | `backend/configs/default_langchain_retriever.yaml` | Qwen3 retriever for the current `embeddings` table. **IF YOU USE A DATABASE WITH EMBEDDINGS BUILT VIA `scripts/compute_embeddings.py` WITH `default_langchain_embedder.yaml`, USE THIS ONE.** |
 | `backend/configs/legacy_langchain_retriever.yaml` | VoyageAI retriever for Scrapyrus `transcription_embeddings`, mapped directly to Scrapyrus columns and filtered to `voyage-4-large`. **IF YOU USE A DATABASE WITH SCRAPYRUS-BUILT VOYAGEAI EMBEDDINGS, USE THIS ONE. CURRENTLY UNTESTED.** |

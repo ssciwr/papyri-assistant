@@ -13,7 +13,7 @@
     "build": "npm run build:backend && npm run build -w frontend",
     "build:backend": "python -m compileall -q backend/src",
     "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "PYTHONPATH=backend/src BACKEND_RELOAD=1 python -m papyri_backend",
+    "dev:backend": "SKILL_DIR=${SKILL_DIR:-backend/skills} PYTHONPATH=backend/src BACKEND_RELOAD=1 python -m papyri_backend",
     "dev:frontend": "npm run dev -w frontend",
     "docker:dev": "docker compose up --build",
     "docker:dev:down": "docker compose down",
