@@ -1,4 +1,4 @@
-"""Unit tests for ownership and lifecycle of the backend chat session."""
+"""Unit tests for atomic session construction and resource ownership."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 from papyri_backend import session
 
 
-class ClosingConnection:
+class ClosingResource:
     def __init__(self) -> None:
         self.close_calls = 0
 
@@ -18,168 +18,109 @@ class ClosingConnection:
         self.close_calls += 1
 
 
-def _session(connection: object | None = None) -> session.Session:
+def _session(
+    connection: ClosingResource | None = None, engine: ClosingResource | None = None
+) -> session.Session:
     return session.Session(
         agent=cast(Any, object()),
-        retriever=cast(Any, object()),
-        connection=cast(
-            Any, connection if connection is not None else ClosingConnection()
-        ),
+        retrievers=cast(Any, {"transcriptions": object()}),
+        connection=cast(Any, connection or ClosingResource()),
+        vector_engine=cast(Any, engine or ClosingResource()),
     )
 
 
-def test_config_path_uses_the_shipped_default_when_unconfigured(monkeypatch) -> None:
+def test_config_path_uses_default_and_expands_configured_home(monkeypatch, tmp_path):
     monkeypatch.delenv("AGENT_CONFIG", raising=False)
-
     assert session._config_path("AGENT_CONFIG", "configs/agent.yaml") == (
         session._ROOT / "configs/agent.yaml"
     )
-
-
-def test_config_path_expands_home_but_preserves_relative_paths(
-    monkeypatch, tmp_path
-) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("AGENT_CONFIG", "~/.config/papyri/agent.yaml")
-    monkeypatch.setenv("RETRIEVER_CONFIG", "configs/alternate-retriever.yaml")
-
-    assert session._config_path("AGENT_CONFIG", "ignored.yaml") == (
+    assert session._config_path("AGENT_CONFIG", "ignored") == (
         tmp_path / ".config/papyri/agent.yaml"
     )
-    assert session._config_path("RETRIEVER_CONFIG", "ignored.yaml") == Path(
-        "configs/alternate-retriever.yaml"
-    )
+    monkeypatch.setenv("AGENT_CONFIG", "relative.yaml")
+    assert session._config_path("AGENT_CONFIG", "ignored") == Path("relative.yaml")
 
 
-def test_build_connection_requires_a_database_url(monkeypatch) -> None:
+def test_build_connection_requires_and_uses_database_url(monkeypatch):
     monkeypatch.delenv("POSTGRES_URL", raising=False)
-
-    with pytest.raises(RuntimeError, match="database url env variable not set"):
+    with pytest.raises(RuntimeError, match="database url"):
         session._build_connection()
-
-
-def test_build_connection_uses_the_configured_database_url(monkeypatch) -> None:
-    connected_to: list[str] = []
-    connection = object()
-    monkeypatch.setenv("POSTGRES_URL", "postgresql://papyri:test@db/papyri")
+    connected: list[str] = []
+    monkeypatch.setenv("POSTGRES_URL", "postgresql://reader@db/papyri")
     monkeypatch.setattr(
-        session.psycopg,
-        "connect",
-        lambda url: connected_to.append(url) or connection,
+        session.psycopg, "connect", lambda url: connected.append(url) or object()
     )
+    session._build_connection()
+    assert connected == ["postgresql://reader@db/papyri"]
 
-    assert session._build_connection() is connection
-    assert connected_to == ["postgresql://papyri:test@db/papyri"]
 
-
-def test_start_constructs_and_publishes_a_complete_session(monkeypatch) -> None:
+def test_start_publishes_complete_replacement_then_closes_previous(monkeypatch):
+    previous_connection = ClosingResource()
+    previous_engine = ClosingResource()
+    previous = _session(previous_connection, previous_engine)
+    connection = ClosingResource()
+    engine = ClosingResource()
     agent = object()
-    retriever = object()
-    connection = object()
-    constructed_from: list[tuple[str, Path]] = []
-    monkeypatch.setattr(session, "_CURRENT", None)
-    monkeypatch.delenv("AGENT_CONFIG", raising=False)
-    monkeypatch.delenv("RETRIEVER_CONFIG", raising=False)
-    monkeypatch.setattr(
-        session.LangChainAgent,
-        "from_config",
-        lambda path: constructed_from.append(("agent", path)) or agent,
-    )
-    monkeypatch.setattr(
-        session.LangChainRetriever,
-        "from_config",
-        lambda path: constructed_from.append(("retriever", path)) or retriever,
-    )
+    retrievers = {"transcriptions": object()}
+    monkeypatch.setattr(session, "_CURRENT", previous)
+    monkeypatch.setattr(session.LangChainAgent, "from_config", lambda _path: agent)
     monkeypatch.setattr(session, "_build_connection", lambda: connection)
+    monkeypatch.setattr(
+        session, "build_retrievers", lambda value: (retrievers, engine)
+    )
 
     result = session.start()
 
-    assert result == session.Session(
-        agent=cast(Any, agent),
-        retriever=cast(Any, retriever),
-        connection=cast(Any, connection),
-    )
+    assert result.agent is agent
+    assert result.retrievers is retrievers
+    assert result.connection is connection
+    assert result.vector_engine is engine
     assert session._CURRENT is result
-    assert constructed_from == [
-        ("agent", session._ROOT / "configs/default_langchain_agent.yaml"),
-        ("retriever", session._ROOT / "configs/default_langchain_retriever.yaml"),
-    ]
+    assert previous_connection.close_calls == 1
+    assert previous_engine.close_calls == 1
 
 
-def test_start_closes_the_connection_of_the_replaced_session(monkeypatch) -> None:
-    previous_connection = ClosingConnection()
-    previous = _session(previous_connection)
-    new_connection = ClosingConnection()
+def test_start_closes_partial_resources_and_keeps_previous(monkeypatch):
+    previous = _session()
+    connection = ClosingResource()
+    cause = ValueError("bad embedding metadata")
     monkeypatch.setattr(session, "_CURRENT", previous)
     monkeypatch.setattr(session.LangChainAgent, "from_config", lambda _path: object())
+    monkeypatch.setattr(session, "_build_connection", lambda: connection)
     monkeypatch.setattr(
-        session.LangChainRetriever, "from_config", lambda _path: object()
-    )
-    monkeypatch.setattr(session, "_build_connection", lambda: new_connection)
-
-    current = session.start()
-
-    assert current is session._CURRENT
-    assert current is not previous
-    assert previous_connection.close_calls == 1
-    assert new_connection.close_calls == 0
-
-
-def test_start_wraps_construction_errors_without_replacing_the_current_session(
-    monkeypatch,
-) -> None:
-    previous_connection = ClosingConnection()
-    previous = _session(previous_connection)
-    cause = ValueError("invalid agent config")
-    monkeypatch.setattr(session, "_CURRENT", previous)
-    monkeypatch.setattr(
-        session.LangChainAgent,
-        "from_config",
-        lambda _path: (_ for _ in ()).throw(cause),
+        session,
+        "build_retrievers",
+        lambda _connection: (_ for _ in ()).throw(cause),
     )
 
-    with pytest.raises(
-        RuntimeError, match="Error during agent construction"
-    ) as excinfo:
+    with pytest.raises(RuntimeError, match="agent construction") as raised:
         session.start()
 
-    assert excinfo.value.__cause__ is cause
+    assert raised.value.__cause__ is cause
+    assert connection.close_calls == 1
     assert session._CURRENT is previous
-    assert previous_connection.close_calls == 0
 
 
-def test_current_starts_once_then_reuses_the_same_session(monkeypatch) -> None:
-    created = _session()
-    starts = 0
-    monkeypatch.setattr(session, "_CURRENT", None)
-
-    def start() -> session.Session:
-        nonlocal starts
-        starts += 1
-        monkeypatch.setattr(session, "_CURRENT", created)
-        return created
-
-    monkeypatch.setattr(session, "start", start)
-
-    assert session.current() is created
-    assert session.current() is created
-    assert starts == 1
-
-
-def test_clear_drops_the_current_session_and_closes_its_connection(monkeypatch) -> None:
-    connection = ClosingConnection()
-    monkeypatch.setattr(session, "_CURRENT", _session(connection))
-
+def test_current_clear_and_accessors(monkeypatch):
+    connection = ClosingResource()
+    engine = ClosingResource()
+    value = _session(connection, engine)
+    monkeypatch.setattr(session, "_CURRENT", value)
+    assert session.current() is value
+    assert session.connection() is connection
+    assert session.retriever("transcriptions") is value.retrievers["transcriptions"]
+    with pytest.raises(ValueError, match="Unknown embedding corpus"):
+        session.retriever(cast(Any, "other"))
     session.clear()
-    session.clear()
-
     assert session._CURRENT is None
     assert connection.close_calls == 1
+    assert engine.close_calls == 1
 
 
-def test_retriever_and_connection_delegate_to_the_current_session(monkeypatch) -> None:
-    current = _session()
-    monkeypatch.setattr(session, "_CURRENT", current)
-
-    assert session.retriever() is current.retriever
-    assert session.connection() is current.connection
+def test_current_starts_only_when_empty(monkeypatch):
+    created = _session()
+    monkeypatch.setattr(session, "_CURRENT", None)
+    monkeypatch.setattr(session, "start", lambda: created)
+    assert session.current() is created

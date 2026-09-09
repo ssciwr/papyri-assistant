@@ -21,8 +21,8 @@ Cached input still counts toward context occupancy. When every model call report
 Implemented:
 
 - configurable OpenAI-compatible chat models;
-- Hugging Face and VoyageAI query-embedding/retrieval configurations;
-- SQL inspection/query tools and four pgvector search tools;
+- database-discovered OpenAI, vLLM, MistralAI, VoyageAI, and Hugging Face embeddings;
+- SQL inspection/query tools and two text-based pgvector search tools;
 - resumable approve/reject dialogs for configured agent actions;
 - development and TLS-enabled production Compose stacks;
 - deterministic backend unit tests with a 90% branch-coverage threshold.
@@ -32,7 +32,7 @@ Known limitations:
 - One in-memory, process-global session: users are not isolated, checkpoints are not durable, and backend restarts lose the conversation.
 - No authentication or authorization.
 - The SQL tool accepts free-form SQL, validates it against the public schema with `sql-data-guard`, and runs it through a database login limited to `SELECT`. This is database-wide read access, not per-user authorization.
-- Real-service `integration` and `live_model` test lanes are marked but not yet implemented.
+- Provider-backed `live_model` tests remain opt-in.
 
 ## Requirements
 
@@ -40,7 +40,7 @@ Known limitations:
 - Python 3.11+
 - PostgreSQL 16 with pgvector, or Docker Compose
 - An OpenAI-compatible chat-model API
-- Storage and memory for the selected embedding model; the default Qwen model is a large first download
+- Provider credentials or local model resources required by the specifications in PostgreSQL
 
 ## Configuration
 
@@ -49,21 +49,16 @@ YAML `type` values are imported and constructed at runtime. `${VARIABLE}` and `$
 | File | Purpose |
 | --- | --- |
 | `backend/configs/default_langchain_agent.yaml` | Model, prompt, tools, middleware, interrupts, filesystem permissions, and Deep Agents backends. |
-| `backend/configs/default_langchain_retriever.yaml` | Qwen3 retriever for an externally populated `embeddings` table containing 2000-dimensional Qwen3 vectors. |
-| `backend/configs/legacy_langchain_retriever.yaml` | VoyageAI retriever for Scrapyrus `transcription_embeddings`, mapped directly to Scrapyrus columns and filtered to `voyage-4-large`. **IF YOU USE A DATABASE WITH SCRAPYRUS-BUILT VOYAGEAI EMBEDDINGS, USE THIS ONE. CURRENTLY UNTESTED.** |
-| `backend/configs/voyage_ai_langchain_retriever.yaml` | VoyageAI retriever for an externally populated `embeddings` table containing 1024-dimensional `voyage-4-large` vectors. |
-
-The config files used can be overridden in the compose files. Per default, the `default_langchain_agent` and voyage-ai configs will be used.
-
-**The query-embedding model and stored vectors must agree on provider, model, and dimensions. Never query vectors with a different model, even when dimensions match.**
+Retriever model and table configuration is not YAML. At startup the backend reads
+all three rows from `embedding_table_metadata`, validates the physical
+tables, and constructs the allowlisted provider integration described there.
+Agent configuration remains in `default_langchain_agent.yaml`.
 
 ### Compose defaults
 
-- Development `compose.yaml` selects `voyage_ai_langchain_retriever.yaml`, which reads the Papyri Assistant `embeddings` table.
-- Production `compose.prod.yaml` selects `legacy_langchain_retriever.yaml`, which reads Scrapyrus `transcription_embeddings` directly.
-- Both VoyageAI paths require `VOYAGE_API_KEY` and stored `voyage-4-large` vectors at 1024 dimensions.
-
-**The current retriever can query only one embedding table at a time because one configuration creates one `PGVectorStore`. The shipped Scrapyrus config queries `transcription_embeddings`; change its `table_name` to `translation_embeddings` to query translations instead. Both tables cannot be queried concurrently by the current backend. This is a temporary limitation and will change in the future (tracked [here](https://github.com/ssciwr/papyri-assistant/issues/21))**
+- Both stacks discover transcriptions, translations, and keywords from the same database contract.
+- The three stores share one connection-pool engine. Identical specifications also share one query-embedding client.
+- Startup fails if any corpus metadata is absent or incomplete, dimensionally inconsistent, or names an unsupported provider.
 
 ## Environment variables
 
@@ -95,7 +90,8 @@ The application only reads `POSTGRES_URL`. For host application commands, explic
 | Variable | Use/default |
 | --- | --- |
 | `HF_TOKEN` | Optional/required for gated Hugging Face models; Compose preserves the HF cache. |
-| `VOYAGE_API_KEY` | Required by VoyageAI configurations and development Compose. |
+| `OPENAI_API_KEY`, `VOYAGE_API_KEY`, `MISTRAL_API_KEY`, `VLLM_API_KEY` | Used only when a published corpus selects the corresponding provider. |
+| `EMBEDDING_ENDPOINT_<PROFILE>` | Resolves a database `endpoint_profile` without storing routing or secrets in the database; profile names are uppercased and punctuation becomes `_`. |
 | `BACKEND_HOST`, `BACKEND_PORT`, `BACKEND_RELOAD` | `0.0.0.0`, `3001`, and optional Uvicorn reload. |
 | `CORS_ORIGIN`, `VITE_API_URL` | Browser origins and frontend API URL; development defaults are `http://localhost:5173` and `http://localhost:3001`. |
 | `VITE_WARNING_BANNER_TEXT` | Optional banner above the chat. |
@@ -109,7 +105,8 @@ The application only reads `POSTGRES_URL`. For host application commands, explic
 
 ## Database and embeddings
 
-Papyri Assistant never creates, populates, resets, or migrates application data. PostgreSQL must already contain the source and vector tables selected by the agent and retriever configurations.
+Papyri Assistant is a reader: Scrapyrus must publish the source tables, all
+three embedding tables, and their contract metadata before backend startup.
 
 ### Start development PostgreSQL
 
@@ -130,10 +127,22 @@ docker compose up -d --force-recreate backend
 
 ### Vector schemas
 
-- **Generic:** `embeddings`, an externally managed table with explicit content, vector, metadata, source, and transcription-ID columns. The default and VoyageAI retriever configs target this table with their matching models.
-- **Scrapyrus:** `transcription_embeddings` and `translation_embeddings`. Each row contains `xml_id`, `model_name`, `chunk_index`, `source_path`, `tm_id`, `language`, `document_text`, `input_hash`, `embedding`, and `updated_at`. `legacy_langchain_retriever.yaml` directly maps LangChain to `transcription_embeddings` and filters retrieval to `voyage-4-large`.
+`transcription_embeddings` and `translation_embeddings` expose unique
+`chunk_id` values, exact embedded `document_text`, source scalar metadata, and a
+dimensioned `embedding` column. `keyword_embeddings` uses the exact keyword text
+as both identity and content. For 2,001–4,000 dimensions Scrapyrus additionally
+publishes an indexed generated `search_embedding halfvec(n)` column; larger
+vectors use exact unindexed search. Cosine distance is fixed.
 
-Retrievers only open existing vector tables; they do not create them. **Only one of the Scrapyrus embedding tables can be selected at a time with the current single-retriever backend.**
+The real PostgreSQL fixture was verified with LangChain Core 1.6.1,
+LangChain Postgres 0.0.17, LangChain OpenAI 1.3.3, Voyage AI 0.4.1,
+Hugging Face 1.2.2, and psycopg 3.3.4. Scrapyrus resolves the corresponding
+provider integrations from its committed `uv.lock` (including Mistral 1.1.6).
+
+Every vector tool requires a corpus. Text searches return chunks for the two
+text corpora and vocabulary candidates for keywords. Vector-input searches also
+require the originating specification id and reject mismatched provenance or
+dimensions. Scores from different corpora are intentionally not merged.
 
 ## Run locally
 
