@@ -35,7 +35,11 @@ services:
       LLM_MODEL: ${LLM_MODEL:-}
       POSTGRES_URL: postgresql://papyri_query_reader:${PAPYRI_QUERY_PASSWORD:-papyri-reader}@postgres:5432/scrapyrus
       HF_TOKEN: ${HF_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      EMBEDDING_ENDPOINT_VLLM: ${EMBEDDING_ENDPOINT_VLLM:-}
       AGENT_CONFIG:  /app/backend/configs/default_langchain_agent.yaml
       PYTHONPATH: /app/backend/src
     volumes:
