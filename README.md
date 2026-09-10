@@ -91,7 +91,7 @@ The application only reads `POSTGRES_URL`. For host application commands, explic
 | --- | --- |
 | `HF_TOKEN` | Optional/required for gated Hugging Face models; Compose preserves the HF cache. |
 | `OPENAI_API_KEY`, `VOYAGE_API_KEY`, `MISTRAL_API_KEY`, `VLLM_API_KEY` | Used only when a published corpus selects the corresponding provider. |
-| `EMBEDDING_ENDPOINT_<PROFILE>` | Resolves a database `endpoint_profile` without storing routing or secrets in the database; profile names are uppercased and punctuation becomes `_`. |
+| `EMBEDDING_ENDPOINT_<PROFILE>` | Resolves a database `endpoint_profile` without storing routing or secrets in the database; profile names are uppercased and punctuation becomes `_`. `.env.example` and Compose include the default `EMBEDDING_ENDPOINT_VLLM`; add an explicit Compose mapping when using another profile. |
 | `BACKEND_HOST`, `BACKEND_PORT`, `BACKEND_RELOAD` | `0.0.0.0`, `3001`, and optional Uvicorn reload. |
 | `CORS_ORIGIN`, `VITE_API_URL` | Browser origins and frontend API URL; development defaults are `http://localhost:5173` and `http://localhost:3001`. |
 | `VITE_WARNING_BANNER_TEXT` | Optional banner above the chat. |
