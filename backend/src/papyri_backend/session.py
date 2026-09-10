@@ -10,7 +10,13 @@ from typing import Any
 import psycopg
 
 from .langchain_agent import LangChainAgent
-from .langchain_retrieval import LangChainRetriever
+from .langchain_retrieval import (
+    Corpus,
+    LangChainRetriever,
+    PGEngine,
+    build_retrievers,
+    close_vector_engine,
+)
 
 # The backend package root, which the default config paths are relative to.
 _ROOT = Path(__file__).resolve().parents[2]
@@ -20,15 +26,19 @@ _CURRENT: "Session | None" = None
 
 @dataclass(frozen=True)
 class Session:
-    """One agent, the retriever backing its search tools, and their database."""
+    """One agent, three corpus retrievers, and their owned database resources."""
 
     agent: LangChainAgent
-    retriever: LangChainRetriever
+    retrievers: dict[Corpus, LangChainRetriever]
     connection: psycopg.Connection[tuple[Any, ...]]
+    vector_engine: PGEngine
 
     def close(self) -> None:
         """Release resources owned by this session."""
-        self.connection.close()
+        try:
+            close_vector_engine(self.vector_engine)
+        finally:
+            self.connection.close()
 
 
 def _config_path(variable: str, default: str) -> Path:
@@ -75,6 +85,8 @@ def start() -> Session:
     """
     global _CURRENT
 
+    connection: psycopg.Connection[tuple[Any, ...]] | None = None
+    vector_engine: PGEngine | None = None
     try:
         # The retriever is not an agent of its own: it backs the search tools
         # the agent calls, which is what makes the agentic path into RAG.
@@ -82,17 +94,20 @@ def start() -> Session:
             _config_path("AGENT_CONFIG", "configs/default_langchain_agent.yaml")
         )
 
-        retriever = LangChainRetriever.from_config(
-            _config_path("RETRIEVER_CONFIG", "configs/default_langchain_retriever.yaml")
-        )
-        print("done")
+        connection = _build_connection()
+        retrievers, vector_engine = build_retrievers(connection)
 
         replacement = Session(
             agent=agent,
-            retriever=retriever,
-            connection=_build_connection(),
+            retrievers=retrievers,
+            connection=connection,
+            vector_engine=vector_engine,
         )
     except Exception as exc:
+        if vector_engine is not None:
+            close_vector_engine(vector_engine)
+        if connection is not None:
+            connection.close()
         raise RuntimeError(f"Error during agent construction: {exc}") from exc
 
     previous = _CURRENT
@@ -122,13 +137,19 @@ def clear() -> None:
         current.close()
 
 
-def retriever() -> LangChainRetriever:
-    """Return the retriever the search tools run against.
+def retriever(corpus: Corpus) -> LangChainRetriever:
+    """Return the requested corpus retriever used by the search tools.
 
     Returns:
         The current session's retriever.
     """
-    return current().retriever
+    try:
+        return current().retrievers[corpus]
+    except KeyError as error:
+        choices = ", ".join(current().retrievers)
+        raise ValueError(
+            f"Unknown embedding corpus {corpus!r}. Expected one of: {choices}"
+        ) from error
 
 
 def connection() -> psycopg.Connection[tuple[Any, ...]]:

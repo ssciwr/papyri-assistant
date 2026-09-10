@@ -1,7 +1,6 @@
 """Provide a connector for deepagents agents driven by LangGraph's v3 event stream."""
 
 import json
-import re
 import uuid
 from collections.abc import Iterator, Mapping
 from pathlib import Path
@@ -15,82 +14,7 @@ from langgraph.types import Command
 from .exceptions import InvalidDecision, StaleDecision
 from .utils import utils
 
-# Models that reason inline mark the trace as ordinary answer text instead of
-# emitting reasoning events. The tags are matched leniently because whitespace
-# and casing vary between deployments.
-_THINK_OPEN = re.compile(r"<\s*think\s*>", re.IGNORECASE)
-_THINK_CLOSE = re.compile(r"</\s*think\s*>", re.IGNORECASE)
 _EMPTY_ANSWER_MESSAGE = "No answer was produced. Please try again."
-_PARTIAL_TAG_LIMIT = 64
-
-
-class _InlineReasoningParser:
-    """Classify inline reasoning without retaining the complete message."""
-
-    def __init__(self, *, assume_prefilled: bool):
-        self._mode = "reasoning" if assume_prefilled else "prefix"
-        self._buffer = ""
-
-    def feed(self, delta: str) -> list[tuple[str, str]]:
-        self._buffer += delta
-        return self._drain()
-
-    def finish(self) -> list[tuple[str, str]]:
-        if not self._buffer:
-            return []
-        kind = "reasoning" if self._mode == "reasoning" else "text"
-        delta, self._buffer = self._buffer, ""
-        return [(kind, delta)]
-
-    def _drain(self) -> list[tuple[str, str]]:
-        if self._mode == "text":
-            delta, self._buffer = self._buffer, ""
-            return [("text", delta)] if delta else []
-
-        if self._mode == "prefix":
-            candidate = self._buffer.lstrip()
-            if not candidate:
-                return []
-            if not candidate.startswith("<"):
-                self._mode = "text"
-                return self._drain()
-
-            tag_end = candidate.find(">")
-            if tag_end < 0 and len(candidate) <= _PARTIAL_TAG_LIMIT:
-                return []
-            if tag_end >= 0 and _THINK_OPEN.fullmatch(candidate[: tag_end + 1]):
-                self._mode = "reasoning"
-                self._buffer = candidate[tag_end + 1 :]
-                return self._drain()
-
-            self._mode = "text"
-            return self._drain()
-
-        close_tag = _THINK_CLOSE.search(self._buffer)
-        if close_tag is not None:
-            reasoning = self._buffer[: close_tag.start()]
-            answer = self._buffer[close_tag.end() :]
-            self._buffer = ""
-            self._mode = "text"
-            return [
-                (kind, text)
-                for kind, text in (("reasoning", reasoning), ("text", answer))
-                if text
-            ]
-
-        possible_tag = self._buffer.rfind("<")
-        if possible_tag < 0:
-            reasoning, self._buffer = self._buffer, ""
-            return [("reasoning", reasoning)] if reasoning else []
-
-        suffix = self._buffer[possible_tag:]
-        if ">" in suffix or len(suffix) > _PARTIAL_TAG_LIMIT:
-            reasoning, self._buffer = self._buffer, ""
-            return [("reasoning", reasoning)]
-
-        reasoning = self._buffer[:possible_tag]
-        self._buffer = suffix
-        return [("reasoning", reasoning)] if reasoning else []
 
 
 class LangChainAgent:
@@ -108,13 +32,10 @@ class LangChainAgent:
         """
         return cls(**utils.load_config(path))
 
-    def __init__(self, *, inline_reasoning: bool | None = None, **agent_kwargs: Any):
+    def __init__(self, **agent_kwargs: Any):
         """Build a deep agent.
 
         Args:
-            inline_reasoning: Treat untagged text before ``</think>`` as a
-                reasoning trace. When omitted, Qwen models are detected by
-                name; set it explicitly for other model families.
             agent_kwargs: Keyword arguments for ``create_deep_agent``, such as
                 ``model``, ``tools``, ``system_prompt`` and ``interrupt_on``.
                 Nested ``{"type": ..., "kwargs": {...}}`` entries are
@@ -128,12 +49,6 @@ class LangChainAgent:
         # that run a model of their own. Building everything in one pass would
         # instead offer the model to its own constructor.
         model = utils.build(agent_kwargs.get("model"))
-        model_name = getattr(model, "model_name", None) or getattr(model, "model", "")
-        self.inline_reasoning = (
-            "qwen" in str(model_name).lower()
-            if inline_reasoning is None
-            else inline_reasoning
-        )
         agent_kwargs = {
             key: value if key == "model" else utils.build(value, {"model": model})
             for key, value in agent_kwargs.items()
@@ -334,7 +249,7 @@ class LangChainAgent:
             # Whether text introduces a tool call is only known when that call
             # appears, so retain just this message's text until it completes.
             pending_text: list[str] = []
-            for kind, delta in self._classified_deltas(message):
+            for kind, delta in self._message_deltas(message):
                 if kind == "text":
                     pending_text.append(delta)
                 else:
@@ -355,27 +270,6 @@ class LangChainAgent:
                         f"{body}\n````\n\n"
                     ),
                 }
-
-    def _classified_deltas(self, message: Any) -> Iterator[tuple[str, str]]:
-        """Classify one model message's text and explicit reasoning deltas."""
-        parser = _InlineReasoningParser(
-            assume_prefilled=getattr(self, "inline_reasoning", False)
-        )
-        has_reasoning_projection = False
-
-        for kind, delta in self._message_deltas(message):
-            if kind == "reasoning":
-                if not has_reasoning_projection:
-                    has_reasoning_projection = True
-                    yield from parser.finish()
-                yield kind, delta
-            elif has_reasoning_projection:
-                yield kind, delta
-            else:
-                yield from parser.feed(delta)
-
-        if not has_reasoning_projection:
-            yield from parser.finish()
 
     @staticmethod
     def _message_deltas(message: Any) -> Iterator[tuple[str, str]]:

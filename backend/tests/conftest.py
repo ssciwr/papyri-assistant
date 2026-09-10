@@ -181,92 +181,13 @@ class FakeRetriever:
     def mmr_search(self, query: str) -> list[Any]:
         return self._search("mmr_search", query)
 
-    def similarity_search_by_vec(self, vector: list[float]) -> list[Any]:
-        return self._search("similarity_search_by_vec", vector)
-
-    def mmr_search_by_vec(self, vector: list[float]) -> list[Any]:
-        return self._search("mmr_search_by_vec", vector)
-
-
-class FakeVectorStore:
-    """A PGVector replacement for retrieval and embedding adapter tests."""
-
-    def __init__(self, documents: Iterable[Any] = ()) -> None:
-        self.documents = list(documents)
-        self.calls: list[tuple[str, Any, dict[str, Any]]] = []
-        self.added_documents: list[Any] = []
-
-    def similarity_search(self, query: str, **kwargs: Any) -> list[Any]:
-        self.calls.append(("similarity_search", query, kwargs))
-        return self.documents
-
-    def max_marginal_relevance_search(self, query: str, **kwargs: Any) -> list[Any]:
-        self.calls.append(("mmr_search", query, kwargs))
-        return self.documents
-
-    def similarity_search_by_vector(
-        self, vector: list[float], **kwargs: Any
+    def similarity_search_by_vec(
+        self, vector: list[float], specification: str
     ) -> list[Any]:
-        self.calls.append(("similarity_search_by_vector", vector, kwargs))
-        return self.documents
+        return self._search("similarity_search_by_vec", (vector, specification))
 
-    def max_marginal_relevance_search_by_vector(
-        self, vector: list[float], **kwargs: Any
-    ) -> list[Any]:
-        self.calls.append(("mmr_search_by_vector", vector, kwargs))
-        return self.documents
-
-    def add_documents(self, documents: Iterable[Any]) -> list[str]:
-        self.added_documents.extend(documents)
-        return [f"document-{index}" for index, _ in enumerate(self.added_documents)]
-
-
-class FakeEmbeddings:
-    """A deterministic embedding model that never downloads or calls a service."""
-
-    def __init__(self) -> None:
-        self.document_inputs: list[list[str]] = []
-        self.query_inputs: list[str] = []
-
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        self.document_inputs.append(texts)
-        return [[float(len(text)), float(index)] for index, text in enumerate(texts)]
-
-    def embed_query(self, text: str) -> list[float]:
-        self.query_inputs.append(text)
-        return [float(len(text)), 0.0]
-
-
-class FakeEngineConnection:
-    """SQLAlchemy connection fake for embedding-selection tests."""
-
-    def __init__(self, rows: Iterable[Mapping[str, Any]] = ()) -> None:
-        self.rows = list(rows)
-        self.queries: list[str] = []
-
-    def __enter__(self) -> FakeEngineConnection:
-        return self
-
-    def __exit__(self, *_: Any) -> None:
-        return None
-
-    def execute(self, query: Any) -> Any:
-        self.queries.append(str(query))
-        if "COUNT(*)" in str(query):
-            return SimpleNamespace(scalar_one=lambda: len(self.rows))
-        return SimpleNamespace(mappings=lambda: iter(self.rows))
-
-
-class FakeEngine:
-    """SQLAlchemy engine fake exposing a single deterministic connection."""
-
-    def __init__(self, rows: Iterable[Mapping[str, Any]] = ()) -> None:
-        self.connection = FakeEngineConnection(rows)
-        self.connect_calls = 0
-
-    def connect(self) -> FakeEngineConnection:
-        self.connect_calls += 1
-        return self.connection
+    def mmr_search_by_vec(self, vector: list[float], specification: str) -> list[Any]:
+        return self._search("mmr_search_by_vec", (vector, specification))
 
 
 @pytest.fixture
@@ -302,36 +223,6 @@ def papyrus_record() -> dict[str, Any]:
                 "pleiades_place_id": 756638,
             }
         ],
-    }
-
-
-@pytest.fixture
-def papyrus_metadata(papyrus_record: Mapping[str, Any]) -> dict[str, Any]:
-    """The metadata every vector chunk from the synthetic record must retain."""
-    return {
-        "source": papyrus_record["source"],
-        "transcription_id": papyrus_record["transcription_id"],
-        "source_path": papyrus_record["source_path"],
-        "tm_id": papyrus_record["tm_id"],
-        "document_type": papyrus_record["document_type"],
-        "language": papyrus_record["language"],
-        "dates": papyrus_record["dates"],
-        "places": papyrus_record["places"],
-    }
-
-
-@pytest.fixture
-def papyrus_row(papyrus_record: Mapping[str, Any]) -> dict[str, Any]:
-    """A database row in the exact shape ``embedd_selection`` consumes."""
-    return {
-        "transcription_id": papyrus_record["transcription_id"],
-        "source_path": papyrus_record["source_path"],
-        "tm_id": papyrus_record["tm_id"],
-        "type": papyrus_record["document_type"],
-        "language": papyrus_record["language"],
-        "text": papyrus_record["transcription"],
-        "dates": papyrus_record["dates"],
-        "places": papyrus_record["places"],
     }
 
 
@@ -383,18 +274,3 @@ def fake_connection() -> FakeConnection:
 @pytest.fixture
 def fake_retriever(papyrus_record: Mapping[str, Any]) -> FakeRetriever:
     return FakeRetriever([papyrus_record])
-
-
-@pytest.fixture
-def fake_vector_store(papyrus_record: Mapping[str, Any]) -> FakeVectorStore:
-    return FakeVectorStore([papyrus_record])
-
-
-@pytest.fixture
-def fake_embeddings() -> FakeEmbeddings:
-    return FakeEmbeddings()
-
-
-@pytest.fixture
-def fake_engine(papyrus_row: Mapping[str, Any]) -> FakeEngine:
-    return FakeEngine([papyrus_row])
