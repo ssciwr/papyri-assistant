@@ -77,13 +77,16 @@ Compose builds its internal URL from `PAPYRI_QUERY_PASSWORD`:
 postgresql://papyri_query_reader:<PAPYRI_QUERY_PASSWORD>@postgres:5432/scrapyrus
 ```
 
-Host tools cannot resolve `postgres`, so `.env.example` separately provides:
+Host processes cannot resolve `postgres`, so `.env.example` sets the application
+variable to the development port published on the host:
 
 ```dotenv
-POSTGRES_HOST_URL=postgresql://papyri_query_reader:<PAPYRI_QUERY_PASSWORD>@127.0.0.1:55432/scrapyrus
+POSTGRES_URL=postgresql://papyri_query_reader:${PAPYRI_QUERY_PASSWORD}@127.0.0.1:55432/scrapyrus
 ```
 
-The application only reads `POSTGRES_URL`. For host application commands, explicitly map the read-only host value: `POSTGRES_URL="$POSTGRES_HOST_URL" ...`.
+The application therefore reads the same variable in both environments. The
+explicit `POSTGRES_URL` entry in each Compose backend service overrides the
+host-side value with its container-network URL.
 
 ### Provider and application values
 
@@ -97,7 +100,6 @@ The application only reads `POSTGRES_URL`. For host application commands, explic
 | `VITE_WARNING_BANNER_TEXT` | Optional banner above the chat. |
 | `POSTGRES_DATA_DIR` | PostgreSQL storage; default `./data/postgres`. |
 | `PAPYRI_QUERY_PASSWORD` | Password for the read-only `papyri_query_reader` login; required in production. Use URL-safe characters. |
-| `POSTGRES_HOST_URL` | Host-side read-only URL; not read automatically by the backend. |
 | `BACKEND_HEALTH_START_PERIOD` | Compose readiness grace period; default 15 minutes for model downloads. |
 | `PROD_VITE_API_URL` | Production frontend API URL; default `/api`. |
 | `FRONTEND_HTTP_PORT`, `FRONTEND_HTTPS_PORT` | Production ports; defaults `80` and `443`. |
@@ -150,8 +152,7 @@ dimensions. Scores from different corpora are intentionally not merged.
 npm install
 python -m pip install -e backend
 cp .env.example .env
-export POSTGRES_HOST_URL=postgresql://papyri_query_reader:replace-with-a-long-random-password@127.0.0.1:55432/scrapyrus
-POSTGRES_URL="$POSTGRES_HOST_URL" npm run dev
+npm run dev
 ```
 
 - Frontend: <http://localhost:5173>
