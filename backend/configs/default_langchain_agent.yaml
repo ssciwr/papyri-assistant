@@ -1,7 +1,7 @@
 name: defaultAgent
 
 model:
-  type: langchain_openai.ChatOpenAI
+  type: papyri_backend.chat_models.MaybeVLLMChatOpenAI
   kwargs:
     model: ${LLM_MODEL}
     base_url: ${LLM_API_URL}

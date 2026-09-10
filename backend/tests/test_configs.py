@@ -27,6 +27,10 @@ def llm_env(monkeypatch) -> None:
     monkeypatch.setenv("LLM_MODEL", "test-model")
     monkeypatch.setenv("LLM_API_URL", "http://localhost:9999/v1")
     monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "papyri_backend.chat_models.httpx.get",
+        lambda *_args, **_kwargs: type("Response", (), {"status_code": 404})(),
+    )
 
 
 def test_agent_config_file_exists() -> None:
