@@ -111,18 +111,17 @@ three embedding tables, and their contract metadata before backend startup.
 
 ```sh
 cp .env.example .env
-docker compose up -d postgres
+docker compose up -d postgres-setup
 ```
 
 The bundled service starts an empty pgvector-enabled database and the read-only login only; database content must be supplied through infrastructure outside this repository. Development PostgreSQL is exposed only at `127.0.0.1:55432` and stored in `${POSTGRES_DATA_DIR:-./data/postgres}`. Production PostgreSQL is private to its Compose network.
 
-The PostgreSQL image creates `papyri_query_reader` during first-time database initialization. The login has `CONNECT`, public-schema `USAGE`, and `SELECT` on current and future tables owned by `scrapyrus`; it has no table-write or sequence privileges. Initialization scripts do not run again for an existing `${POSTGRES_DATA_DIR}`. To install or refresh the role on an existing development database, run:
-
-```sh
-docker compose up -d --force-recreate postgres
-docker compose exec postgres /docker-entrypoint-initdb.d/10-query-reader.sh
-docker compose up -d --force-recreate backend
-```
+The one-shot `postgres-setup` service creates or refreshes
+`papyri_query_reader` after PostgreSQL becomes healthy and before the backend
+starts. It runs for both new and existing `${POSTGRES_DATA_DIR}` contents, so a
+changed `PAPYRI_QUERY_PASSWORD` is applied on the next Compose startup. The
+login has `CONNECT`, public-schema `USAGE`, and `SELECT` on current and future
+tables owned by `scrapyrus`; it has no table-write or sequence privileges.
 
 ### Vector schemas
 
