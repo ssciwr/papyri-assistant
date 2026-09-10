@@ -43,8 +43,11 @@ def use(monkeypatch, agent) -> FakeConnection:
     connection = FakeConnection()
     fake = session.Session(
         agent=cast(Any, agent),
-        retriever=cast(Any, object()),
+        retrievers=cast(Any, {}),
         connection=cast(Any, connection),
+        vector_engine=cast(
+            Any, type("Engine", (), {"close": lambda self: None})()
+        ),
     )
     monkeypatch.setattr(session, "_CURRENT", fake)
     return connection

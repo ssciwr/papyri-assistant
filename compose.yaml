@@ -16,21 +16,21 @@ services:
       - ${POSTGRES_DATA_DIR:-./data/postgres}:/var/lib/postgresql/data
     ports:
       - "127.0.0.1:55432:5432"
-  scrapyrus:
-    build: ./docker/scrapyrus
-    profiles:
-      - tools
+
+  postgres-setup:
+    image: pgvector/pgvector:pg16
     depends_on:
       postgres:
         condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
-      SCRAPYRUS_DATABASE_URL: postgresql://scrapyrus:scrapyrus@postgres:5432/scrapyrus
-    stdin_open: true
-    tty: true
-    working_dir: /workspace
-    command: sleep infinity
+      PGHOST: postgres
+      PGPASSWORD: scrapyrus
+      POSTGRES_DB: scrapyrus
+      POSTGRES_USER: scrapyrus
+      PAPYRI_QUERY_PASSWORD: ${PAPYRI_QUERY_PASSWORD:-papyri-reader}
+    entrypoint: ["/postgres-setup/10-query-reader.sh"]
+    volumes:
+      - ./docker/postgres-init:/postgres-setup:ro
 
   backend:
     build:
@@ -38,8 +38,8 @@ services:
       dockerfile: backend/Dockerfile
       target: dev
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-setup:
+        condition: service_completed_successfully
     environment:
       BACKEND_PORT: "3001"
       BACKEND_RELOAD: "1"
@@ -47,12 +47,14 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_API_URL: ${LLM_API_URL:-}
       LLM_MODEL: ${LLM_MODEL:-}
-      POSTGRES_URL: postgresql://scrapyrus:scrapyrus@postgres:5432/scrapyrus
+      POSTGRES_URL: postgresql://papyri_query_reader:${PAPYRI_QUERY_PASSWORD:-papyri-reader}@postgres:5432/scrapyrus
       HF_TOKEN: ${HF_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      EMBEDDING_ENDPOINT_VLLM: ${EMBEDDING_ENDPOINT_VLLM:-}
       AGENT_CONFIG:  /app/backend/configs/default_langchain_agent.yaml
-      EMBEDDER_CONFIG: /app/backend/configs/voyage_ai_langchain_embedder.yaml
-      RETRIEVER_CONFIG: /app/backend/configs/voyage_ai_langchain_retriever.yaml
       PYTHONPATH: /app/backend/src
     volumes:
       - ./backend/src:/app/backend/src

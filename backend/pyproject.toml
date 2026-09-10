@@ -13,13 +13,14 @@ dependencies = [
     "langchain>=1.0.0",
     "langchain-core>=1.0.0",
     "langchain-huggingface>=1.2.2",
+    "langchain-mistralai>=1.1.2",
     "langchain-openai>=1.0.0",
     "langchain-postgres>=0.0.17",
-    "langchain-text-splitters>=1.1.2",
     "langchain-voyageai>=0.4.1",
     "psycopg>=3.3.4",
     "python-dotenv>=1.0.0",
     "sentence-transformers>=6.0.0",
+    "sql-data-guard>=0.1.9",
     "uvicorn[standard]>=0.35.0",
 ]
 

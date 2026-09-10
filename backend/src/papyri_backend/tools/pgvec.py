@@ -1,15 +1,31 @@
-from langchain.tools import tool
+from typing import Annotated
 
+from langchain.tools import tool
+from pydantic import Field
+
+from ..langchain_retrieval import Corpus
 from ..session import retriever
 
 
-@tool(parse_docstring=True)
-def similarity_search(query: str):
-    """Search the document store for the passages closest to a question.
+CorpusArgument = Annotated[
+    Corpus,
+    Field(
+        description=(
+            "Corpus to search. Use transcriptions for original-language wording "
+            "and readings; translations for a document's meaning or subject in "
+            "translation; and keywords for controlled vocabulary and classification "
+            "terms rather than document passages."
+        )
+    ),
+]
 
-    The query is embedded with the same model the store was built with, and the
-    nearest passages are returned. Use this when you want the best matches for
-    one specific question.
+
+@tool(parse_docstring=True)
+def similarity_search(query: str, corpus: CorpusArgument):
+    """Search one published corpus for the items closest to a question.
+
+    Transcriptions contain original-language chunks, translations contain
+    translated chunks, and keywords contain exact vocabulary candidates.
 
     Args:
         query: The text to search for, written as the question or statement the
@@ -19,12 +35,12 @@ def similarity_search(query: str):
         The matching documents, each with its page content and metadata. How
         many come back is fixed by the retriever's configuration.
     """
-    return retriever().similarity_search(query)
+    return retriever(corpus).similarity_search(query)
 
 
 @tool(parse_docstring=True)
-def mmr_search(query: str):
-    """Search the document store for passages that cover a question broadly.
+def mmr_search(query: str, corpus: CorpusArgument):
+    """Search one corpus for varied passages or vocabulary candidates.
 
     Like ``similarity_search``, but the results are picked with maximal marginal
     relevance, which trades some closeness to the query for variety between the
@@ -39,42 +55,4 @@ def mmr_search(query: str):
         The selected documents, each with its page content and metadata. How
         many come back is fixed by the retriever's configuration.
     """
-    return retriever().mmr_search(query)
-
-
-@tool(parse_docstring=True)
-def similarity_search_by_vec(vec: list[float]):
-    """Search the document store with an embedding you already have.
-
-    Same as ``similarity_search``, except the query is given as a vector rather
-    than as text, so no embedding step happens here. Only use this when you were
-    handed an embedding; otherwise search by text.
-
-    Args:
-        vec: The query embedding, whose length must match the store's embedding
-            model.
-
-    Returns:
-        The matching documents, each with its page content and metadata. How
-        many come back is fixed by the retriever's configuration.
-    """
-    return retriever().similarity_search_by_vec(vec)
-
-
-@tool(parse_docstring=True)
-def mmr_search_by_vec(vec: list[float]):
-    """Search the document store broadly with an embedding you already have.
-
-    Same as ``mmr_search``, except the query is given as a vector rather than as
-    text. Only use this when you were handed an embedding; otherwise search by
-    text.
-
-    Args:
-        vec: The query embedding, whose length must match the store's embedding
-            model.
-
-    Returns:
-        The selected documents, each with its page content and metadata. How
-        many come back is fixed by the retriever's configuration.
-    """
-    return retriever().mmr_search_by_vec(vec)
+    return retriever(corpus).mmr_search(query)
