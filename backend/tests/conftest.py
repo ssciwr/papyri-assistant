@@ -142,12 +142,14 @@ class FakeConnection:
         fetch_error: Exception | None = None,
     ) -> None:
         self.queries: list[str] = []
+        self.params: list[Any] = []
         self.rollback_calls = 0
         self.execute_error = execute_error
         self.cursor = FakeCursor(rows, error=fetch_error)
 
-    def execute(self, query: str) -> FakeCursor:
+    def execute(self, query: str, params: Any = None) -> FakeCursor:
         self.queries.append(query)
+        self.params.append(params)
         if self.execute_error is not None:
             raise self.execute_error
         return self.cursor
