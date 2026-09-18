@@ -28,6 +28,12 @@ class FakeStreamMessage:
     text: str = ""
     reasoning: str = ""
     tool_calls: FakeToolCalls = field(default_factory=FakeToolCalls)
+    usage_metadata: dict[str, Any] | None = None
+
+    @property
+    def output(self) -> SimpleNamespace:
+        """Match the completed LangGraph v3 message projection."""
+        return SimpleNamespace(usage_metadata=self.usage_metadata)
 
 
 @dataclass

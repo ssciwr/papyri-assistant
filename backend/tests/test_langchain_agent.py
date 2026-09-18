@@ -49,7 +49,7 @@ def _collect(events: Iterator[dict[str, Any]]) -> dict[str, Any]:
             result[event["type"]] += event["content"]
         elif event["type"] == "replace":
             result["text"] = event["content"]
-        else:
+        elif event["type"] == "done":
             result["interrupt"] = event["interrupt"]
             result["done"] = True
     result["text"] = result["text"].strip()
@@ -154,6 +154,148 @@ def test_turn_stream_adds_finalized_tool_calls_to_reasoning(user_message) -> Non
         "".join(event["content"] for event in updates if event["type"] == "text")
         == "Here is the final answer."
     )
+
+
+def test_turn_stream_accumulates_usage_across_model_calls(user_message) -> None:
+    graph = FakeGraph(
+        [
+            FakeStreamMessage(
+                text="I will search.",
+                tool_calls=FakeToolCalls([{"name": "query_sql", "args": {}}]),
+                usage_metadata={
+                    "input_tokens": 120,
+                    "output_tokens": 15,
+                    "total_tokens": 135,
+                    "input_token_details": {"cache_read": 80},
+                },
+            ),
+            FakeStreamMessage(
+                text="Here is the result.",
+                usage_metadata={
+                    "input_tokens": 180,
+                    "output_tokens": 20,
+                    "total_tokens": 200,
+                    "input_token_details": {"cache_read": 120},
+                },
+            ),
+        ]
+    )
+
+    agent = _agent(graph)
+    agent.context_window = 1_000
+    updates = list(agent.stream_single_turn(user_message("Question")))
+
+    usage_updates = [event for event in updates if event["type"] == "usage"]
+    assert usage_updates == [
+        {
+            "type": "usage",
+            "usage": {
+                "input_tokens": 120,
+                "output_tokens": 15,
+                "total_tokens": 135,
+                "cached_input_tokens": 80,
+            },
+            "model_usage": {
+                "model_call": 1,
+                "input_tokens": 120,
+                "output_tokens": 15,
+                "total_tokens": 135,
+                "cached_input_tokens": 80,
+                "context_window": 1_000,
+            },
+        },
+        {
+            "type": "usage",
+            "usage": {
+                "input_tokens": 300,
+                "output_tokens": 35,
+                "total_tokens": 335,
+                "cached_input_tokens": 200,
+            },
+            "model_usage": {
+                "model_call": 2,
+                "input_tokens": 180,
+                "output_tokens": 20,
+                "total_tokens": 200,
+                "cached_input_tokens": 120,
+                "context_window": 1_000,
+            },
+        },
+    ]
+
+    assert updates[-1] == {
+        "type": "done",
+        "interrupt": None,
+        "usage": {
+            "input_tokens": 300,
+            "output_tokens": 35,
+            "total_tokens": 335,
+            "cached_input_tokens": 200,
+        },
+        "model_usage": usage_updates[-1]["model_usage"],
+    }
+
+
+def test_turn_usage_omits_aggregate_cache_when_any_call_lacks_details(
+    user_message,
+) -> None:
+    graph = FakeGraph(
+        [
+            FakeStreamMessage(
+                usage_metadata={
+                    "input_tokens": 100,
+                    "output_tokens": 10,
+                    "total_tokens": 110,
+                    "input_token_details": {"cache_read": 60},
+                }
+            ),
+            FakeStreamMessage(
+                text="Answer",
+                usage_metadata={
+                    "input_tokens": 150,
+                    "output_tokens": 20,
+                    "total_tokens": 170,
+                },
+            ),
+        ]
+    )
+
+    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
+    usage_updates = [event for event in updates if event["type"] == "usage"]
+
+    assert usage_updates[0]["usage"]["cached_input_tokens"] == 60
+    assert "cached_input_tokens" not in usage_updates[1]["usage"]
+    assert "cached_input_tokens" not in updates[-1]["usage"]
+
+
+@pytest.mark.parametrize(
+    ("profile", "expected"),
+    [
+        ({"max_input_tokens": 262_144}, 262_144),
+        ({}, None),
+        ({"max_input_tokens": 0}, None),
+        ({"max_input_tokens": True}, None),
+        (None, None),
+    ],
+)
+def test_model_context_window(profile, expected) -> None:
+    model = type("Model", (), {"profile": profile})()
+
+    assert LangChainAgent._model_context_window(model) == expected
+
+
+@pytest.mark.parametrize(
+    "usage_metadata",
+    [None, {}, {"input_tokens": 1, "output_tokens": 2}],
+)
+def test_turn_stream_omits_unavailable_or_incomplete_usage(
+    user_message, usage_metadata
+) -> None:
+    graph = FakeGraph([FakeStreamMessage(text="Answer", usage_metadata=usage_metadata)])
+
+    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
+
+    assert updates[-1] == {"type": "done", "interrupt": None}
 
 
 @pytest.mark.parametrize(
