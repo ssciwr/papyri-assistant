@@ -31,7 +31,7 @@ Known limitations:
 
 - One in-memory, process-global session: users are not isolated, checkpoints are not durable, and backend restarts lose the conversation.
 - No authentication or authorization.
-- The SQL tool accepts free-form SQL. Every call is rolled back, including successful calls, but there is no parser/allow-list gateway and Compose connects as the database owner.
+- The SQL tool accepts free-form SQL, validates it against the public schema with `sql-data-guard`, and runs it through a database login limited to `SELECT`. This is database-wide read access, not per-user authorization.
 - Embedding generation is a host-side script, not a Compose job; `backend/scripts` is not copied into the backend image.
 - Real-service `integration` and `live_model` test lanes are marked but not yet implemented.
 
@@ -78,21 +78,21 @@ The config files used can be overridden in the compose files. Per default, the `
 | `LLM_API_URL` | OpenAI-compatible API base URL. |
 | `LLM_MODEL` | Provider model identifier. |
 | `LLM_API_KEY` | Provider key; `EMPTY` is only a construction fallback. |
-| `POSTGRES_URL` | psycopg/SQLAlchemy URL used by sessions, tools, retrievers, and ingestion. |
+| `POSTGRES_URL` | Read-only psycopg/SQLAlchemy URL used by sessions, SQL tools, and retrievers. |
 
-Compose sets its internal URL directly:
+Compose builds its internal URL from `PAPYRI_QUERY_PASSWORD`:
 
 ```text
-postgresql://scrapyrus:scrapyrus@postgres:5432/scrapyrus
+postgresql://papyri_query_reader:<PAPYRI_QUERY_PASSWORD>@postgres:5432/scrapyrus
 ```
 
 Host tools cannot resolve `postgres`, so `.env.example` separately provides:
 
 ```dotenv
-POSTGRES_HOST_URL=postgresql://scrapyrus:scrapyrus@127.0.0.1:55432/scrapyrus
+POSTGRES_HOST_URL=postgresql://papyri_query_reader:<PAPYRI_QUERY_PASSWORD>@127.0.0.1:55432/scrapyrus
 ```
 
-The application only reads `POSTGRES_URL`. For host commands, explicitly map the host value: `POSTGRES_URL="$POSTGRES_HOST_URL" ...`.
+The application only reads `POSTGRES_URL`. For host application commands, explicitly map the read-only host value: `POSTGRES_URL="$POSTGRES_HOST_URL" ...`.
 
 ### Provider and application values
 
@@ -104,7 +104,8 @@ The application only reads `POSTGRES_URL`. For host commands, explicitly map the
 | `CORS_ORIGIN`, `VITE_API_URL` | Browser origins and frontend API URL; development defaults are `http://localhost:5173` and `http://localhost:3001`. |
 | `VITE_WARNING_BANNER_TEXT` | Optional banner above the chat. |
 | `POSTGRES_DATA_DIR` | PostgreSQL storage; default `./data/postgres`. |
-| `POSTGRES_HOST_URL` | Host-side development URL; not read automatically by the backend. |
+| `PAPYRI_QUERY_PASSWORD` | Password for the read-only `papyri_query_reader` login; required in production. Use URL-safe characters. |
+| `POSTGRES_HOST_URL` | Host-side read-only URL; not read automatically by the backend. |
 | `BACKEND_HEALTH_START_PERIOD` | Compose readiness grace period; default 15 minutes for model downloads. |
 | `PROD_VITE_API_URL` | Production frontend API URL; default `/api`. |
 | `FRONTEND_HTTP_PORT`, `FRONTEND_HTTPS_PORT` | Production ports; defaults `80` and `443`. |
@@ -134,6 +135,14 @@ docker compose run --build --rm \
 
 Development PostgreSQL is exposed only at `127.0.0.1:55432` and stored in `${POSTGRES_DATA_DIR:-./data/postgres}`. Production PostgreSQL is private to its Compose network.
 
+The PostgreSQL image creates `papyri_query_reader` during first-time database initialization. The login has `CONNECT`, public-schema `USAGE`, and `SELECT` on current and future tables owned by `scrapyrus`; it has no table-write or sequence privileges. Initialization scripts do not run again for an existing `${POSTGRES_DATA_DIR}`. To install or refresh the role on an existing development database, run:
+
+```sh
+docker compose up -d --force-recreate postgres
+docker compose exec postgres /docker-entrypoint-initdb.d/10-query-reader.sh
+docker compose up -d --force-recreate backend
+```
+
 ### Vector schemas
 
 - **Papyri Assistant:** `embeddings`, created by `LangChainEmbeddings`, with deterministic chunk IDs and explicit content, vector, metadata, source, and transcription-ID columns. The default and VoyageAI retriever configs target this table with their matching models.
@@ -162,7 +171,7 @@ The default Qwen pipeline reads non-empty Scrapyrus transcriptions/translations,
 npm install
 python -m pip install -e backend
 cp .env.example .env
-export POSTGRES_HOST_URL=postgresql://scrapyrus:scrapyrus@127.0.0.1:55432/scrapyrus
+export POSTGRES_HOST_URL=postgresql://papyri_query_reader:replace-with-a-long-random-password@127.0.0.1:55432/scrapyrus
 POSTGRES_URL="$POSTGRES_HOST_URL" npm run dev
 ```
 
