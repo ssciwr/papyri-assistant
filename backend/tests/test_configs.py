@@ -44,6 +44,7 @@ def test_agent_config_loads(llm_env) -> None:
 
     assert config["system_prompt"].startswith("You are a concise")
     assert config["model"]["kwargs"]["model"] == "test-model"
+    assert config["skills"] == ["/skills/"]
 
 
 def test_agent_config_builds_an_agent(llm_env) -> None:
@@ -52,4 +53,5 @@ def test_agent_config_builds_an_agent(llm_env) -> None:
     agent = LangChainAgent.from_config(AGENT_CONFIG)
 
     assert agent.agent is not None
+    assert "SkillsMiddleware.before_agent" in agent.agent.nodes
     assert agent.thread_id

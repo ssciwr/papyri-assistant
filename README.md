@@ -1,6 +1,6 @@
 # Papyri Assistant
 
-> **Work in progress.** Local chat, agent, SQL, and vector-retrieval paths are implemented and unit tested. The database and vector tables must be provisioned outside this application.
+> **Work in progress.** Local chat, agent, SQL, and vector-retrieval paths are implemented and unit tested. Database ingestion, vector-table selection, and embedding-provider setup still require manual configuration.
 
 ## Overview
 
@@ -9,7 +9,7 @@ Papyri Assistant is a research chat application for a papyrology database.
 - React-based web frontend provides chat, session reset, export, reasoning display, and approve/reject dialogs for interrupted actions.
 - FastAPI-based python backend hosts a LangChain/DeepAgents agent with basic agent harness.
 - Agent tools inspect/query PostgreSQL and search pgvector with similarity or maximal-marginal-relevance (MMR) retrieval.
-- PostgreSQL supplies externally managed papyrus data and pgvector embeddings.
+- PostgreSQL database supplies papyrus metadata and transcriptions; a separate script creates embeddings usint the pgvector extension.
 
 Assistant responses and reasoning are streamed from LangGraph through the backend to the browser. Completed reasoning remains available in the foldable reasoning panel. `new` replaces the current session.
 
@@ -90,8 +90,7 @@ host-side value with its container-network URL.
 | Variable | Use/default |
 | --- | --- |
 | `HF_TOKEN` | Optional/required for gated Hugging Face models; Compose preserves the HF cache. |
-| `OPENAI_API_KEY`, `VOYAGE_API_KEY`, `MISTRAL_API_KEY`, `VLLM_API_KEY` | Used only when a published corpus selects the corresponding provider. |
-| `EMBEDDING_ENDPOINT_<PROFILE>` | Resolves a database `endpoint_profile` without storing routing or secrets in the database; profile names are uppercased and punctuation becomes `_`. `.env.example` and Compose include the default `EMBEDDING_ENDPOINT_VLLM`; add an explicit Compose mapping when using another profile. |
+| `VOYAGE_API_KEY` | Required by VoyageAI configurations and development Compose. |
 | `BACKEND_HOST`, `BACKEND_PORT`, `BACKEND_RELOAD` | `0.0.0.0`, `3001`, and optional Uvicorn reload. |
 | `CORS_ORIGIN`, `VITE_API_URL` | Browser origins and frontend API URL; development defaults are `http://localhost:5173` and `http://localhost:3001`. |
 | `VITE_WARNING_BANNER_TEXT` | Optional banner above the chat. |

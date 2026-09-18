@@ -31,6 +31,12 @@ middleware:
   - type: langchain.agents.middleware.TodoListMiddleware
     kwargs: {}
 
+# create_deep_agent installs SkillsMiddleware for these sources. Skills are
+# discovered as /skills/<skill-name>/SKILL.md and exposed to the model through
+# the middleware's progressively disclosed system-prompt index.
+skills:
+  - /skills/
+
 # "reject" carries an optional reason, which reaches the model as the refused
 # tool call's result. Saying what to do instead belongs there rather than in a
 # follow-up message, so the model knows which action was refused and why.
@@ -52,11 +58,11 @@ permissions:
       operations: ["read", "write"]
       paths: ["/memory", "/memory/**"]
       mode: "allow"
-  # allow agent to read SKILLNAME.md files
+  # Allow the agent to read SKILL.md and any supporting files in each skill.
   - type: deepagents.FilesystemPermission
     kwargs:
       operations: ["read"]
-      paths: ["/skills", "/skills/*.md"]
+      paths: ["/skills", "/skills/**"]
       mode: "allow"
   # don´t  allow an agent to rewrite skills directly from within the app
   - type: deepagents.FilesystemPermission
@@ -127,8 +133,6 @@ backend:
 # store: BaseStore for cross-thread state, required by the "memory" kwarg below
 
 # memory: list of AGENTS.md-style files loaded as persistent context
-
-# skills: list of skill directories exposed to the agent
 
 # response_format: structured-output strategy for the final answer
 

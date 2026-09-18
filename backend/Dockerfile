@@ -9,7 +9,7 @@ RUN mkdir /app/workspace
 RUN mkdir /app/memory
 
 # copy skills
-COPY backend/skills /app/
+COPY backend/skills /app/skills/
 
 # copy and install package
 COPY backend/pyproject.toml backend/pyproject.toml

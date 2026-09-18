@@ -58,6 +58,7 @@ services:
       PYTHONPATH: /app/backend/src
     volumes:
       - ./backend/src:/app/backend/src
+      - ./backend/skills:/app/skills:ro
       - huggingface-cache:/root/.cache/huggingface
     ports:
       - "127.0.0.1:3001:3001"
