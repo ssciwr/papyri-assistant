@@ -49,18 +49,14 @@ def urls_for(tm_ids: Iterable[str | int]) -> dict[int, str]:
 
     Args:
         tm_ids: Trismegistos numbers, in any order and with any repeats.
-            Entries that are not positive numbers are ignored.
 
     Returns:
         One entry per usable id, mapping it to its link.
     """
     wanted: list[int] = []
     for tm_id in tm_ids:
-        try:
-            number = int(tm_id)
-        except (TypeError, ValueError):
-            continue
-        if number > 0 and number not in wanted:
+        number = int(tm_id)
+        if number not in wanted:
             wanted.append(number)
 
     if not wanted:
