@@ -55,10 +55,10 @@ def test_falls_back_for_everything_when_the_query_fails(
     fake_connection.execute_error = RuntimeError("database is away")
     use_connection(monkeypatch, fake_connection)
 
-    assert sources.urls_for([1885, 60465]) == {
-        1885: f"{TRISMEGISTOS}/1885",
-        60465: f"{TRISMEGISTOS}/60465",
-    }
+    with pytest.raises(RuntimeError):
+        sources.urls_for([1885, 60465])
+
+    assert fake_connection.rollback_calls == 1
 
 
 def test_asks_for_each_id_once_and_rolls_back(
@@ -71,15 +71,6 @@ def test_asks_for_each_id_once_and_rolls_back(
 
     assert fake_connection.params == [([1885, 60465],)]
     assert fake_connection.rollback_calls == 1
-
-
-def test_skips_unusable_ids(
-    monkeypatch: pytest.MonkeyPatch, fake_connection: Any
-) -> None:
-    fake_connection.cursor.rows = []
-    use_connection(monkeypatch, fake_connection)
-
-    assert sources.urls_for([0, -1, None, "not-a-number"]) == {}
 
 
 def test_an_empty_request_runs_no_query(

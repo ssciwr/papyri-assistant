@@ -28,16 +28,13 @@ def _edition_ids(tm_ids: list[int]) -> dict[int, str | None]:
             WHERE tm_id = ANY(%s)
             GROUP BY tm_id
         """
+    session_connection = connection()
     try:
-        session_connection = connection()
-        try:
-            rows = session_connection.execute(lookup, (tm_ids,)).fetchall()
-        finally:
-            # Nothing here writes, and rolling back also clears the aborted
-            # state a failed query would otherwise leave on the connection.
-            session_connection.rollback()
-    except Exception:
-        return {}
+        rows = session_connection.execute(lookup, (tm_ids,)).fetchall()
+    finally:
+        # Nothing here writes, and rolling back also clears the aborted
+        # state a failed query would otherwise leave on the connection.
+        session_connection.rollback()
 
     return {int(tm_id): ddb or dclp for tm_id, ddb, dclp in rows}
 
