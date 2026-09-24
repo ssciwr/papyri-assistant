@@ -4,22 +4,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
 
 from . import links
 from .session import connection
-
-# tm_id is not unique in papyri - one document may have many source files - so
-# the rows are grouped and the smallest non-null id of each kind is taken. That
-# yields exactly one row per document, and the same row every time.
-_LOOKUP = """
-    SELECT tm_id,
-           min(ddb_hybrid_id) FILTER (WHERE ddb_hybrid_id IS NOT NULL),
-           min(dclp_hybrid_id) FILTER (WHERE dclp_hybrid_id IS NOT NULL)
-    FROM papyri
-    WHERE tm_id = ANY(%s)
-    GROUP BY tm_id
-"""
 
 
 def _edition_ids(tm_ids: list[int]) -> dict[int, str | None]:
@@ -33,10 +20,18 @@ def _edition_ids(tm_ids: list[int]) -> dict[int, str | None]:
         is returned when the query fails, so that a database problem costs the
         better link rather than every link.
     """
+    lookup = """
+            SELECT tm_id,
+                   min(ddb_hybrid_id) FILTER (WHERE ddb_hybrid_id IS NOT NULL),
+                   min(dclp_hybrid_id) FILTER (WHERE dclp_hybrid_id IS NOT NULL)
+            FROM papyri
+            WHERE tm_id = ANY(%s)
+            GROUP BY tm_id
+        """
     try:
         session_connection = connection()
         try:
-            rows = session_connection.execute(_LOOKUP, (tm_ids,)).fetchall()
+            rows = session_connection.execute(lookup, (tm_ids,)).fetchall()
         finally:
             # Nothing here writes, and rolling back also clears the aborted
             # state a failed query would otherwise leave on the connection.
@@ -47,7 +42,7 @@ def _edition_ids(tm_ids: list[int]) -> dict[int, str | None]:
     return {int(tm_id): ddb or dclp for tm_id, ddb, dclp in rows}
 
 
-def urls_for(tm_ids: Iterable[Any]) -> dict[int, str]:
+def urls_for(tm_ids: Iterable[str | int]) -> dict[int, str]:
     """Find the public link for each of several documents.
 
     The papyri.info edition is preferred and Trismegistos is the fallback

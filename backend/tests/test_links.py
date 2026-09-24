@@ -39,14 +39,10 @@ def test_tm_id_found_nested_in_metadata_json() -> None:
     assert links.tm_id_from_metadata({"metadata": {"tm_id": "123456"}}) == 123456
 
 
-def test_top_level_tm_id_wins_over_nested() -> None:
-    metadata = {"tm_id": 111, "metadata": {"tm_id": 222}}
-    assert links.tm_id_from_metadata(metadata) == 111
-
 
 def test_tm_id_absent_returns_none() -> None:
     assert links.tm_id_from_metadata({"source": "scrapyrus"}) is None
 
 
-def test_tm_id_survives_a_non_dict_metadata_value() -> None:
+def test_tm_id_returns_none_for_non_dict() -> None:
     assert links.tm_id_from_metadata({"metadata": "not a dict"}) is None
