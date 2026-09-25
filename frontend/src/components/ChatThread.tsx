@@ -33,6 +33,15 @@ type MessageContentComponents = NonNullable<
 const StreamReasoningContext = createContext(false);
 const EMPTY_MODEL_USAGE: ModelUsage[] = [];
 
+
+const markdownComponents = {
+  a: ({ children, href }: ComponentPropsWithoutRef<"a">) => (
+    <a href={href} rel="noopener noreferrer" target="_blank">
+      {children}
+    </a>
+  )
+};
+
 const MarkdownContent = forwardRef<HTMLDivElement, MarkdownContentProps>(
   ({ children, className, ...props }, ref) => {
     const markdown = typeof children === "string" ? children : "";
@@ -42,7 +51,10 @@ const MarkdownContent = forwardRef<HTMLDivElement, MarkdownContentProps>(
 
     return (
       <div {...props} ref={ref} className={classNames}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+         <ReactMarkdown
+          components={markdownComponents}
+          remarkPlugins={[remarkGfm]}
+        >
           {markdown}
         </ReactMarkdown>
       </div>
