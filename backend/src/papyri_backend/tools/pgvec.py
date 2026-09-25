@@ -1,7 +1,42 @@
 from langchain.tools import tool
+from collections.abc import MutableMapping
+from typing import Any
 
 from ..session import retriever
+from ..links import tm_id_from_metadata
+from .. import sources
 
+def _stamp_links(documents: list[Any]) -> list[Any]:
+    """Add each document's public link to its own metadata, in place.
+
+    Args:
+        documents: Whatever the retriever returned.
+
+    Returns:
+        The same object that was passed in.
+    """
+    by_tm_id: dict[int, list[MutableMapping[str, Any]]] = {}
+    for document in documents or ():
+        metadata = getattr(document, "metadata", None)
+        if not isinstance(metadata, MutableMapping):
+            continue
+        tm_id = tm_id_from_metadata(metadata)
+        if tm_id is not None:
+            by_tm_id.setdefault(tm_id, []).append(metadata)
+
+    if not by_tm_id:
+        return documents
+
+    urls = sources.urls_for(by_tm_id.keys())
+
+    for tm_id, metadata_entries in by_tm_id.items():
+        url = urls.get(tm_id)
+        if url is None:
+            continue
+        for metadata in metadata_entries:
+            metadata["url"] = url
+
+    return documents
 
 @tool(parse_docstring=True)
 def similarity_search(query: str):
@@ -19,7 +54,7 @@ def similarity_search(query: str):
         The matching documents, each with its page content and metadata. How
         many come back is fixed by the retriever's configuration.
     """
-    return retriever().similarity_search(query)
+    return _stamp_links(retriever().similarity_search(query))
 
 
 @tool(parse_docstring=True)
@@ -39,7 +74,7 @@ def mmr_search(query: str):
         The selected documents, each with its page content and metadata. How
         many come back is fixed by the retriever's configuration.
     """
-    return retriever().mmr_search(query)
+    return _stamp_links(retriever().mmr_search(query))
 
 
 @tool(parse_docstring=True)
@@ -58,7 +93,7 @@ def similarity_search_by_vec(vec: list[float]):
         The matching documents, each with its page content and metadata. How
         many come back is fixed by the retriever's configuration.
     """
-    return retriever().similarity_search_by_vec(vec)
+    return _stamp_links(retriever().similarity_search_by_vec(vec))
 
 
 @tool(parse_docstring=True)
@@ -77,4 +112,4 @@ def mmr_search_by_vec(vec: list[float]):
         The selected documents, each with its page content and metadata. How
         many come back is fixed by the retriever's configuration.
     """
-    return retriever().mmr_search_by_vec(vec)
+    return _stamp_links(retriever().mmr_search_by_vec(vec))
