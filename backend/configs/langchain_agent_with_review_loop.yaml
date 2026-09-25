@@ -1,0 +1,157 @@
+name: defaultAgent
+
+# Qwen's chat template consumes the opening <think> tag. Classify its output
+# as reasoning immediately instead of briefly streaming it as answer text.
+inline_reasoning: true
+
+model:
+  type: langchain_openai.ChatOpenAI
+  kwargs:
+    model: ${LLM_MODEL}
+    base_url: ${LLM_API_URL}
+    api_key: ${LLM_API_KEY:-EMPTY}
+    temperature: 0.0
+    # Request the provider's token counts on the final streaming chunk.
+    # LangChain does not enable this automatically for custom base URLs.
+    stream_usage: true
+    # DeepAgents uses this profile to trigger summarization at 85% and retain the newest 10%.
+    # must be adjusted to the LLM_MODEL's context length
+    profile:
+      max_input_tokens: 262144
+
+# Caller-authored system instructions, placed before the deepagents base prompt.
+system_prompt: >-
+  You are a concise, helpful assistant, expert in papyrology and expert in
+  Postgres sql and postgres-vector. You know how to use semantic and mmr search
+  with queries and vectors, what the best search strategies are for a given
+  problem, and how to efficiently work with large databases of digitalized,
+  annotated ancient documents.
+
+  Whenever you mention a specific papyrus, link to it. Search results carry a
+  "url" in their metadata; for documents you found through sql, call
+  get_source_links with their tm_ids. Write every link as markdown, for example
+  [TM 1885](https://papyri.info/editions/p.zen.pestm/54). Never invent a url -
+  only use one a tool gave you: a url you wrote yourself will be rejected before
+  your answer is shown.
+
+tools:
+  # sql query tools
+  - papyri_backend.tools.sql.list_sql_tables
+  - papyri_backend.tools.sql.inspect_sql
+  - papyri_backend.tools.sql.query_sql
+  - papyri_backend.tools.sql.get_source_links
+
+  # semantic search tools
+  - papyri_backend.tools.pgvec.similarity_search
+  - papyri_backend.tools.pgvec.mmr_search
+  - papyri_backend.tools.pgvec.similarity_search_by_vec
+  - papyri_backend.tools.pgvec.mmr_search_by_vec
+
+# Deep Agents installs its own model-aware SummarizationMiddleware. Do not add
+# LangChain's middleware here: a same-named entry replaces the enhanced default.
+middleware:
+  - type: langchain.agents.middleware.TodoListMiddleware
+    kwargs: {}
+
+# "reject" carries an optional reason, which reaches the model as the refused
+# tool call's result. Saying what to do instead belongs there rather than in a
+# follow-up message, so the model knows which action was refused and why.
+# "edit" is deliberately absent: rewriting tool arguments by hand is a worse
+# way to redirect the agent than telling it what you actually want.
+# Keys are tool names, checked against the agent's tools at construction.
+interrupt_on:
+  execute: # only fires with a sandbox backend; see "backend"
+    allowed_decisions: ["approve", "reject"]
+
+# operations are filesystem operations, not tool names: only "read" and
+# "write" exist. read_file/glob/grep/ls count as read; write_file/edit_file/
+# delete count as write.
+# This is probably temporary, b/c the final agent might not need  all of those
+permissions:
+  # agent can write/read memory files
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["read", "write"]
+      paths: ["/memory", "/memory/**"]
+      mode: "allow"
+  # allow agent to read SKILLNAME.md files
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["read"]
+      paths: ["/skills", "/skills/*.md"]
+      mode: "allow"
+  # don´t  allow an agent to rewrite skills directly from within the app
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["write"]
+      paths: ["/skills", "/skills/**"]
+      mode: "deny"
+  # future: store logfiles here. Don't allow the agent to inspect logfiles and leak them
+  # somewhere we don´t know
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["write", "read"]
+      paths: ["/logs", "/logs/**"]
+      mode: "deny"
+  # allow large tool results output read/write
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["read", "write"]
+      paths: ["/large_tool_results", "/large_tool_results/**"]
+      mode: "allow"
+  # deny every filesystem read/write other than in explicitly configured routes
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["read", "write"]
+      paths: ["/**"]
+      mode: "deny"
+
+# Routes backends by directory. The default is in-state, so files live in graph
+# state and "execute" returns an error until a sandbox backend is set.
+backend:
+  type: deepagents.backends.CompositeBackend
+  kwargs:
+    default:
+      type: deepagents.backends.StateBackend
+      kwargs: {}
+    routes:
+      "/workspace/":
+        type: deepagents.backends.FilesystemBackend
+        kwargs:
+          virtual_mode: True
+          root_dir: ${WORKSPACE_DIR:-/app/workspace}
+      "/memory/":
+        type: deepagents.backends.FilesystemBackend
+        kwargs:
+          virtual_mode: True
+          root_dir: ${MEMORY_DIR:-/app/memory}
+      "/skills/":
+        type: deepagents.backends.FilesystemBackend
+        kwargs:
+          virtual_mode: True
+          root_dir: ${SKILL_DIR:-/app/skills}
+      "/logs/":
+        type: deepagents.backends.FilesystemBackend
+        kwargs:
+          virtual_mode: True
+          root_dir: ${LOGS_DIR:-/app/logs}
+
+# Named subagents the "task" tool can delegate to. Each entry needs name,
+# description and system_prompt, and may add tools/model/interrupt_on.
+# subagents: []
+
+# checkpointer: LangChainAgent installs a
+#   langgraph.checkpoint.memory.InMemorySaver when none is given, because
+#   interrupts cannot be resumed without one. Set it here to persist threads,
+#   e.g. type: langgraph.checkpoint.sqlite.SqliteSaver
+
+# store: BaseStore for cross-thread state, required by the "memory" kwarg below
+
+# memory: list of AGENTS.md-style files loaded as persistent context
+
+# skills: list of skill directories exposed to the agent
+
+# response_format: structured-output strategy for the final answer
+
+# state_schema / context_schema: custom DeepAgentState / runtime context types
+# name, debug, cache: graph name, verbose tracing, and a langgraph cache

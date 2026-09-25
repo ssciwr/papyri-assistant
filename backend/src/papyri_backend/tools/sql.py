@@ -4,6 +4,7 @@ from langchain.tools import tool
 from sql_data_guard import verify_sql
 
 from ..session import connection
+from .. import sources
 
 
 _SCHEMA_QUERY = """
@@ -112,3 +113,40 @@ def query_sql(query: str) -> list[tuple] | str:
         errors = "; ".join(sorted(validation["errors"]))
         return f"Error, SQL query validation failed: {errors}"
     return _rows(query)
+
+
+@tool(parse_docstring=True)
+def get_source_links(tm_ids: list[int]) -> str:
+    """Look up the public edition link of one or more documents.
+
+    Use this for documents you found with ``query_sql``.
+
+    Args:
+        tm_ids: The Trismegistos numbers of the documents you want to cite.
+
+    Returns:
+        One line per requested document, in the order asked. A document whose
+        link could not be resolved gets a line saying so, so that a missing
+        link is visible to you rather than silently absent.
+    """
+    if not tm_ids:
+        return "No tm_ids were given, so there is nothing to look up."
+
+    wanted: list[int] = []
+    unusable: list[str] = []
+    for tm_id in tm_ids:
+        try:
+            wanted.append(int(tm_id))
+        except (TypeError, ValueError):
+            unusable.append(str(tm_id))
+
+    urls = sources.urls_for(wanted)
+
+    lines = [
+        f"TM {tm_id}: {urls[tm_id]}"
+        if tm_id in urls
+        else f"TM {tm_id}: no link could be resolved for this document"
+        for tm_id in wanted
+    ]
+    lines += [f"{value}: not a Trismegistos number" for value in unusable]
+    return "\n".join(lines)

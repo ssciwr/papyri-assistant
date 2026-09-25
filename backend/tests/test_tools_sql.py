@@ -197,3 +197,48 @@ def test_query_sql_returns_connection_errors(
     assert result == (
         "Error, the query attempt failed with error: session has no connection"
     )
+
+@pytest.fixture
+def link_lookups(monkeypatch: pytest.MonkeyPatch) -> list[list[int]]:
+    """Record the batches of ids looked up, resolving everything but TM 999."""
+    lookups: list[list[int]] = []
+
+    def fake_urls_for(tm_ids: Any) -> dict[int, str]:
+        wanted = [int(tm_id) for tm_id in tm_ids]
+        lookups.append(wanted)
+        return {
+            tm_id: f"https://papyri.info/editions/p.test/{tm_id}"
+            for tm_id in wanted
+            if tm_id != 999
+        }
+
+    monkeypatch.setattr(sql.sources, "urls_for", fake_urls_for)
+    return lookups
+
+def test_get_source_links_formats_one_line_per_id(
+    link_lookups: list[list[int]],
+) -> None:
+    result = sql.get_source_links.invoke({"tm_ids": [12345, 678]})
+
+    assert result == (
+        "TM 12345: https://papyri.info/editions/p.test/12345\n"
+        "TM 678: https://papyri.info/editions/p.test/678"
+    )
+    assert link_lookups == [[12345, 678]]
+
+
+def test_get_source_links_when_a_document_has_no_link(
+    link_lookups: list[list[int]],
+) -> None:
+    result = sql.get_source_links.invoke({"tm_ids": [999, 12345]})
+
+    assert result.splitlines() == [
+        "TM 999: no link could be resolved for this document",
+        "TM 12345: https://papyri.info/editions/p.test/12345",
+    ]
+
+def test_get_source_links_handles_an_empty_request() -> None:
+    assert sql.get_source_links.invoke({"tm_ids": []}) == (
+        "No tm_ids were given, so there is nothing to look up."
+    )
+
