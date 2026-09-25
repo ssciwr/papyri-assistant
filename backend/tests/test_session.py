@@ -101,7 +101,7 @@ def test_start_constructs_and_publishes_a_complete_session(monkeypatch) -> None:
     )
     assert session._CURRENT is result
     assert constructed_from == [
-        ("agent", session._ROOT / "configs/default_langchain_agent.yaml"),
+        ("agent", session._ROOT / "configs/langchain_agent_with_review_loop.yaml"),
         ("retriever", session._ROOT / "configs/default_langchain_retriever.yaml"),
     ]
 

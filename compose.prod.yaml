@@ -50,7 +50,7 @@ services:
       POSTGRES_URL: postgresql://papyri_query_reader:${PAPYRI_QUERY_PASSWORD:?PAPYRI_QUERY_PASSWORD must be set}@postgres:5432/scrapyrus
       HF_TOKEN: ${HF_TOKEN:-}
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
-      AGENT_CONFIG: /app/backend/configs/default_langchain_agent.yaml
+      AGENT_CONFIG: /app/backend/configs/langchain_agent_with_review_loop.yaml
       RETRIEVER_CONFIG: /app/backend/configs/legacy_langchain_retriever.yaml
     volumes:
       - huggingface-cache:/root/.cache/huggingface
