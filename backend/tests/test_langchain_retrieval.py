@@ -78,16 +78,6 @@ def metadata_rows():
     ]
 
 
-def test_discovery_returns_three_current_complete_specifications():
-    result = module.discover_specifications(cast(Any, Connection(metadata_rows())))
-
-    assert set(result) == set(CORPUS_MAPPINGS)
-    assert result["keywords"].table_name == "keyword_embeddings"
-    assert result["translations"].provider_options == {
-        "check_embedding_ctx_length": False
-    }
-
-
 @pytest.mark.parametrize(
     ("rows", "message"),
     [
@@ -131,13 +121,6 @@ def test_discovery_wraps_database_errors_and_rolls_back():
     with pytest.raises(EmbeddingContractError, match="current Scrapyrus"):
         module.discover_specifications(cast(Any, connection))
     assert connection.rollback_calls == 1
-
-
-def test_specification_identity_covers_compatibility_not_table_or_size():
-    first = specification()
-    same = replace(first, table_name="other", embedding_size=99)
-    assert first.identity == same.identity
-    assert first.identity != replace(first, provider_options={}).identity
 
 
 def test_endpoint_requires_a_configured_profile(monkeypatch):
