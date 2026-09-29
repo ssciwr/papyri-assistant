@@ -8,7 +8,7 @@ import hashlib
 import json
 import os
 import re
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -16,6 +16,7 @@ from langchain_postgres.v2.engine import PGEngine
 from langchain_postgres.v2.indexes import DistanceStrategy
 from langchain_postgres.v2.vectorstores import PGVectorStore
 import psycopg
+from pydantic import SecretStr
 from sqlalchemy.engine import make_url
 
 
@@ -105,7 +106,7 @@ def _endpoint(specification: EmbeddingSpecification) -> str | None:
     return endpoint
 
 
-def _secret(provider: str) -> str | None:
+def _secret(provider: str) -> SecretStr | None:
     variables = {
         "openai": "OPENAI_API_KEY",
         "vllm": "VLLM_API_KEY",
@@ -117,12 +118,12 @@ def _secret(provider: str) -> str | None:
         return None
     value = os.getenv(variable)
     if provider == "vllm":
-        return value or "EMPTY"
+        return SecretStr(value or "EMPTY")
     if not value:
         raise EmbeddingContractError(
             f"Embedding provider {provider!r} requires {variable}."
         )
-    return value
+    return SecretStr(value)
 
 
 def _only_options(
@@ -160,7 +161,7 @@ def build_embeddings(specification: EmbeddingSpecification) -> Embeddings:
         )
         return OpenAIEmbeddings(
             model=specification.model_name,
-            api_key=cast(Any, _secret(provider)),
+            api_key=_secret(provider),
             base_url=endpoint,
             **options,
         )
@@ -184,7 +185,7 @@ def build_embeddings(specification: EmbeddingSpecification) -> Embeddings:
             raise EmbeddingContractError("VoyageAI query_input_type must be 'query'.")
         return VoyageAIEmbeddings(
             model=specification.model_name,
-            api_key=cast(Any, _secret(provider)),
+            api_key=_secret(provider),
             base_url=endpoint,
             **options,
         )

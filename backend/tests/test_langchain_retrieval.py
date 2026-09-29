@@ -124,7 +124,9 @@ def test_endpoint_profile_and_provider_credentials(monkeypatch):
     with pytest.raises(EmbeddingContractError, match="OPENAI_API_KEY"):
         module._secret("openai")
     monkeypatch.delenv("VLLM_API_KEY", raising=False)
-    assert module._secret("vllm") == "EMPTY"
+    vllm_secret = module._secret("vllm")
+    assert vllm_secret is not None
+    assert vllm_secret.get_secret_value() == "EMPTY"
     assert module._secret("huggingface") is None
 
 
