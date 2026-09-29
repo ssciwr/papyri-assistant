@@ -163,7 +163,7 @@ class FakeConnection:
 
 
 class FakeRetriever:
-    """A vector-search facade that records every adapter call."""
+    """A search facade that records every adapter call."""
 
     def __init__(
         self,
@@ -186,14 +186,6 @@ class FakeRetriever:
 
     def mmr_search(self, query: str) -> list[Any]:
         return self._search("mmr_search", query)
-
-    def similarity_search_by_vec(
-        self, vector: list[float], specification: str
-    ) -> list[Any]:
-        return self._search("similarity_search_by_vec", (vector, specification))
-
-    def mmr_search_by_vec(self, vector: list[float], specification: str) -> list[Any]:
-        return self._search("mmr_search_by_vec", (vector, specification))
 
 
 @pytest.fixture

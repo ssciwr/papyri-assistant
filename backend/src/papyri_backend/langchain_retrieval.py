@@ -371,59 +371,21 @@ class LangChainRetriever:
     def __init__(
         self,
         *,
-        corpus: Corpus,
-        specification: EmbeddingSpecification,
-        embeddings: Embeddings,
         store: PGVectorStore,
         similarity_search_kwargs: Mapping[str, Any] | None = None,
         mmr_search_kwargs: Mapping[str, Any] | None = None,
     ) -> None:
-        self.corpus = corpus
-        self.specification = specification
-        self.embeddings = embeddings
         self.store = store
         self.similarity_search_kwargs = dict(similarity_search_kwargs or {"k": 4})
         self.mmr_search_kwargs = dict(
             mmr_search_kwargs or {"k": 4, "fetch_k": 20, "lambda_mult": 0.5}
         )
 
-    @property
-    def specification_id(self) -> str:
-        return self.specification.identity
-
     def similarity_search(self, query: str) -> list[Document]:
         return self.store.similarity_search(query, **self.similarity_search_kwargs)
 
     def mmr_search(self, query: str) -> list[Document]:
         return self.store.max_marginal_relevance_search(query, **self.mmr_search_kwargs)
-
-    def _validate_vector(self, vec: list[float], specification_id: str) -> None:
-        if specification_id != self.specification_id:
-            raise ValueError(
-                f"Vector provenance {specification_id!r} is incompatible with "
-                f"corpus {self.corpus!r} ({self.specification_id})."
-            )
-        if len(vec) != self.specification.embedding_size:
-            raise ValueError(
-                f"Vector has {len(vec)} dimensions, but corpus {self.corpus!r} "
-                f"requires {self.specification.embedding_size}."
-            )
-
-    def similarity_search_by_vec(
-        self, vec: list[float], specification_id: str
-    ) -> list[Document]:
-        self._validate_vector(vec, specification_id)
-        return self.store.similarity_search_by_vector(
-            vec, **self.similarity_search_kwargs
-        )
-
-    def mmr_search_by_vec(
-        self, vec: list[float], specification_id: str
-    ) -> list[Document]:
-        self._validate_vector(vec, specification_id)
-        return self.store.max_marginal_relevance_search_by_vector(
-            vec, **self.mmr_search_kwargs
-        )
 
 
 def build_retrievers(
@@ -471,9 +433,6 @@ def build_retrievers(
                 distance_strategy=DistanceStrategy.COSINE_DISTANCE,
             )
             retrievers[corpus] = LangChainRetriever(
-                corpus=corpus,
-                specification=specification,
-                embeddings=client,
                 store=store,
                 similarity_search_kwargs=similarity_search_kwargs,
                 mmr_search_kwargs=mmr_search_kwargs,

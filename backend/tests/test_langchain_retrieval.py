@@ -206,40 +206,20 @@ class RecordingStore:
         self.calls.append(("mmr", value, kwargs))
         return self.documents
 
-    def similarity_search_by_vector(self, value, **kwargs):
-        self.calls.append(("similarity-vector", value, kwargs))
-        return self.documents
 
-    def max_marginal_relevance_search_by_vector(self, value, **kwargs):
-        self.calls.append(("mmr-vector", value, kwargs))
-        return self.documents
-
-
-def test_retriever_forwards_searches_and_validates_vector_provenance():
+def test_retriever_forwards_searches():
     store = RecordingStore()
     retriever = LangChainRetriever(
-        corpus="transcriptions",
-        specification=specification(),
-        embeddings=cast(Any, object()),
         store=cast(Any, store),
         similarity_search_kwargs={"k": 2},
         mmr_search_kwargs={"k": 3, "fetch_k": 8},
     )
     assert retriever.similarity_search("lease") is store.documents
     assert retriever.mmr_search("variety") is store.documents
-    identity = retriever.specification_id
-    assert retriever.similarity_search_by_vec([0.1, 0.2], identity) is store.documents
-    assert retriever.mmr_search_by_vec([0.3, 0.4], identity) is store.documents
-    assert [call[0] for call in store.calls] == [
-        "similarity",
-        "mmr",
-        "similarity-vector",
-        "mmr-vector",
+    assert store.calls == [
+        ("similarity", "lease", {"k": 2}),
+        ("mmr", "variety", {"k": 3, "fetch_k": 8}),
     ]
-    with pytest.raises(ValueError, match="provenance"):
-        retriever.similarity_search_by_vec([0.1, 0.2], "wrong")
-    with pytest.raises(ValueError, match="dimensions"):
-        retriever.mmr_search_by_vec([0.1], identity)
 
 
 class FakeEmbeddings:
