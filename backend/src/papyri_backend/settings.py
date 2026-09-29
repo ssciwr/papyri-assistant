@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 
 def load_environment() -> None:
+    """Load backend and working-directory environment files."""
     backend_env = Path(__file__).resolve().parents[2] / ".env"
 
     load_dotenv(backend_env)

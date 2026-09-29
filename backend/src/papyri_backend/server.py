@@ -79,6 +79,7 @@ class ChatStreamEvent(BaseModel):
 
 
 def _cors_origins() -> list[str]:
+    """Return the configured CORS origins."""
     return [
         origin.strip()
         for origin in os.getenv("CORS_ORIGIN", "http://localhost:5173").split(",")
@@ -110,6 +111,7 @@ app.add_middleware(
 async def validation_exception_handler(
     _request: Request, _exc: RequestValidationError
 ) -> JSONResponse:
+    """Return a concise response for invalid request bodies."""
     return JSONResponse(
         status_code=400,
         content={"error": "Expected a JSON body with a messages array."},
@@ -118,6 +120,7 @@ async def validation_exception_handler(
 
 @app.exception_handler(StaleDecision)
 async def stale_decision_handler(_request: Request, exc: StaleDecision) -> JSONResponse:
+    """Return a conflict response for an outdated decision."""
     # The client's view of the conversation is out of date rather than wrong:
     # it should drop the dialog and re-read the current state, not retry.
     return JSONResponse(status_code=409, content={"error": str(exc)})
@@ -127,16 +130,19 @@ async def stale_decision_handler(_request: Request, exc: StaleDecision) -> JSONR
 async def invalid_decision_handler(
     _request: Request, exc: InvalidDecision
 ) -> JSONResponse:
+    """Return an unprocessable response for an invalid decision."""
     return JSONResponse(status_code=422, content={"error": str(exc)})
 
 
 @app.get("/health")
 async def health() -> dict[str, bool]:
+    """Report that the backend is healthy."""
     return {"ok": True}
 
 
 @app.post("/new", response_model=ChatResponse)
 async def new() -> JSONResponse | dict[str, str]:
+    """Start a fresh chat session."""
     try:
         answer = new_agent()
         return answer

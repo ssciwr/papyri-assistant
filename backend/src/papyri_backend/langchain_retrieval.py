@@ -89,11 +89,13 @@ class EmbeddingSpecification:
 
 
 def _env_key(prefix: str, value: str) -> str:
+    """Build an environment variable name from a prefix and value."""
     normalized = re.sub(r"[^A-Za-z0-9]+", "_", value).strip("_").upper()
     return f"{prefix}_{normalized}"
 
 
 def _endpoint(specification: EmbeddingSpecification) -> str | None:
+    """Resolve the endpoint required by an embedding specification."""
     if specification.endpoint_profile is None:
         return None
     variable = _env_key("EMBEDDING_ENDPOINT", specification.endpoint_profile)
@@ -107,6 +109,7 @@ def _endpoint(specification: EmbeddingSpecification) -> str | None:
 
 
 def _secret(provider: str) -> SecretStr | None:
+    """Load the API secret required by an embedding provider."""
     variables = {
         "openai": "OPENAI_API_KEY",
         "vllm": "VLLM_API_KEY",
@@ -131,6 +134,7 @@ def _only_options(
     allowed: set[str],
     required: set[str] | None = None,
 ) -> dict[str, Any]:
+    """Validate and return the specification's provider options."""
     unknown = set(specification.provider_options) - allowed
     if unknown:
         raise EmbeddingContractError(
@@ -242,6 +246,7 @@ def build_embeddings(specification: EmbeddingSpecification) -> Embeddings:
 
 
 def _row_value(row: Any, key: str, index: int) -> Any:
+    """Read a database row value from a mapping or positional row."""
     return row[key] if isinstance(row, Mapping) else row[index]
 
 
@@ -324,6 +329,7 @@ def _validate_table(
     mapping: CorpusMapping,
     specification: EmbeddingSpecification,
 ) -> str:
+    """Validate a corpus table and return its embedding column name."""
     embedding_column = (
         "search_embedding"
         if 2_000 < specification.embedding_size <= 4_000
@@ -375,6 +381,7 @@ class LangChainRetriever:
         similarity_search_kwargs: Mapping[str, Any] | None = None,
         mmr_search_kwargs: Mapping[str, Any] | None = None,
     ) -> None:
+        """Initialize a retriever with its search defaults."""
         self.store = store
         self.similarity_search_kwargs = dict(similarity_search_kwargs or {"k": 4})
         self.mmr_search_kwargs = dict(
@@ -382,9 +389,11 @@ class LangChainRetriever:
         )
 
     def similarity_search(self, query: str) -> list[Document]:
+        """Return documents most similar to a query."""
         return self.store.similarity_search(query, **self.similarity_search_kwargs)
 
     def mmr_search(self, query: str) -> list[Document]:
+        """Return documents selected by maximal marginal relevance."""
         return self.store.max_marginal_relevance_search(query, **self.mmr_search_kwargs)
 
 

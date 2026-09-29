@@ -8,6 +8,7 @@ from .settings import load_environment
 
 
 def main() -> None:
+    """Run the Papyri backend server."""
     load_environment()
 
     uvicorn.run(
@@ -19,4 +20,5 @@ def main() -> None:
 
 
 def _env_bool(name: str) -> bool:
+    """Return whether an environment variable contains a true value."""
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
