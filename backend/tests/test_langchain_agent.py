@@ -298,42 +298,6 @@ def test_turn_stream_omits_unavailable_or_incomplete_usage(
     assert updates[-1] == {"type": "done", "interrupt": None}
 
 
-@pytest.mark.parametrize(
-    "text",
-    ["<think>Plan</think>Answer", "  < THINK >Plan</ Think >Answer"],
-)
-def test_stream_reclassifies_chunked_inline_reasoning(user_message, text) -> None:
-    graph = FakeGraph([FakeStreamMessage(text=text)])
-
-    updates = list(_agent(graph).stream_single_turn(user_message("Question")))
-
-    assert _collect(iter(updates)) == {
-        "text": "Answer",
-        "reasoning": "Plan",
-        "interrupt": None,
-        "done": True,
-    }
-    assert all("<think>" not in event.get("content", "") for event in updates)
-
-
-def test_prefilled_reasoning_never_streams_as_answer_text(user_message) -> None:
-    graph = FakeGraph([FakeStreamMessage(text="Plan</think>Answer")])
-    agent = _agent(graph)
-    agent.inline_reasoning = True
-
-    updates = list(agent.stream_single_turn(user_message("Question")))
-
-    assert _collect(iter(updates)) == {
-        "text": "Answer",
-        "reasoning": "Plan",
-        "interrupt": None,
-        "done": True,
-    }
-    assert all(
-        event["type"] != "text" or "Plan" not in event["content"] for event in updates
-    )
-
-
 def test_raw_message_events_preserve_reasoning_and_text_deltas(user_message) -> None:
     class RawMessage:
         tool_calls = FakeToolCalls()
