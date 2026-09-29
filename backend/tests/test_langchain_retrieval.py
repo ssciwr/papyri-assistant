@@ -1,214 +1,408 @@
-"""Behavioral coverage for the PGVectorStore retrieval adapter."""
+"""Database-contract and routing tests for the three retrieval corpora."""
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from typing import Any
+from dataclasses import replace
+from typing import Any, cast
 
-import pytest
-import yaml
 from langchain_core.documents import Document
+import pytest
 
-from papyri_backend import langchain_retrieval as retrieval_module
-from papyri_backend.langchain_retrieval import LangChainRetriever
+from papyri_backend import langchain_retrieval as module
+from papyri_backend.langchain_retrieval import (
+    CORPUS_MAPPINGS,
+    EmbeddingContractError,
+    EmbeddingSpecification,
+    LangChainRetriever,
+)
 
 
-STORE_KWARGS = {
-    "table_name": "embeddings",
-    "schema_name": "public",
-    "vector_size": 2000,
-    "content_column": "content",
-    "embedding_column": "embedding",
-    "id_column": {"name": "chunk_id", "data_type": "TEXT", "nullable": False},
-    "metadata_columns": [
-        {"name": "source", "data_type": "TEXT", "nullable": False},
-        {
-            "name": "transcription_id",
-            "data_type": "TEXT",
-            "nullable": False,
-        },
-    ],
-    "metadata_json_column": "metadata",
-}
+def specification(**changes: Any) -> EmbeddingSpecification:
+    value = EmbeddingSpecification(
+        table_name="transcription_embeddings",
+        model_name="model-a",
+        embedding_size=2,
+        provider="vllm",
+        provider_options={"check_embedding_ctx_length": False},
+        endpoint_profile="local",
+        contract_version=1,
+    )
+    return replace(value, **changes)
+
+
+class Cursor:
+    def __init__(self, rows: list[Any], error: Exception | None = None):
+        self.rows = rows
+        self.error = error
+        self.executions: list[tuple[Any, Any]] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, query, params=None):
+        self.executions.append((query, params))
+        if self.error:
+            raise self.error
+
+    def fetchall(self):
+        return self.rows
+
+
+class Connection:
+    def __init__(self, rows: list[Any], error: Exception | None = None):
+        self.cursor_value = Cursor(rows, error)
+        self.rollback_calls = 0
+
+    def cursor(self):
+        return self.cursor_value
+
+    def rollback(self):
+        self.rollback_calls += 1
 
 
 class RecordingStore:
-    """The unavailable pgvector service boundary, with observable calls."""
+    def __init__(self):
+        self.documents = [Document(page_content="chunk")]
+        self.calls = []
 
-    def __init__(self) -> None:
-        self.documents = [
-            Document(
-                page_content="Lease of a house from Didyme.",
-                metadata={"tm_id": 123456, "transcription_id": "789"},
-            )
-        ]
-        self.calls: list[tuple[str, Any, dict[str, Any]]] = []
-
-    def _record(self, method: str, value: Any, kwargs: dict[str, Any]):
-        self.calls.append((method, value, kwargs))
+    def similarity_search(self, value, **kwargs):
+        self.calls.append(("similarity", value, kwargs))
         return self.documents
 
-    def similarity_search(self, query: str, **kwargs: Any):
-        return self._record("similarity_search", query, kwargs)
-
-    def max_marginal_relevance_search(self, query: str, **kwargs: Any):
-        return self._record("mmr_search", query, kwargs)
-
-    def similarity_search_by_vector(self, vector: list[float], **kwargs: Any):
-        return self._record("similarity_search_by_vector", vector, kwargs)
-
-    def max_marginal_relevance_search_by_vector(
-        self, vector: list[float], **kwargs: Any
-    ):
-        return self._record("mmr_search_by_vector", vector, kwargs)
+    def max_marginal_relevance_search(self, value, **kwargs):
+        self.calls.append(("mmr", value, kwargs))
+        return self.documents
 
 
-@pytest.fixture
-def store_boundary(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    store = RecordingStore()
-    engine_urls: list[Any] = []
-    create_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+class FakeEmbeddings:
+    def __init__(self, dimensions=2):
+        self.dimensions = dimensions
+        self.queries = []
 
-    def open_engine(url: Any) -> str:
-        engine_urls.append(url)
-        return "vector-engine"
-
-    def open_store(*args: Any, **kwargs: Any) -> RecordingStore:
-        create_calls.append((args, kwargs))
-        return store
-
-    monkeypatch.setenv("POSTGRES_URL", "postgresql://reader:secret@db.example/papyri")
-    monkeypatch.setattr(
-        retrieval_module,
-        "PGEngine",
-        SimpleNamespace(from_connection_string=open_engine),
-    )
-    monkeypatch.setattr(
-        retrieval_module,
-        "PGVectorStore",
-        SimpleNamespace(create_sync=open_store),
-    )
-    return SimpleNamespace(
-        store=store,
-        engine_urls=engine_urls,
-        create_calls=create_calls,
-    )
+    def embed_query(self, query):
+        self.queries.append(query)
+        return [0.0] * self.dimensions
 
 
-def test_constructor_normalizes_url_and_opens_the_configured_table(
-    store_boundary: SimpleNamespace,
-) -> None:
-    embeddings = object()
+class ClosingEngine:
+    def __init__(self):
+        self.close_calls = 0
 
-    LangChainRetriever(embeddings=embeddings, store_kwargs=STORE_KWARGS)
+    def close(self):
+        self.close_calls += 1
 
-    database_url = store_boundary.engine_urls[0]
-    assert database_url.drivername == "postgresql+psycopg"
-    assert database_url.username == "reader"
-    assert database_url.database == "papyri"
 
-    args, kwargs = store_boundary.create_calls[0]
-    assert args == ("vector-engine", embeddings, "embeddings")
-    assert kwargs == {
-        "schema_name": "public",
-        "content_column": "content",
-        "embedding_column": "embedding",
-        "id_column": "chunk_id",
-        "metadata_columns": ["source", "transcription_id"],
-        "metadata_json_column": "metadata",
+def metadata_rows():
+    return [
+        (
+            mapping.table_name,
+            f"model-{corpus}",
+            2,
+            "vllm",
+            {"check_embedding_ctx_length": False},
+            "local",
+            1,
+        )
+        for corpus, mapping in CORPUS_MAPPINGS.items()
+    ]
+
+
+# --- embedding metadata discovery -------------------------------------------
+
+
+def test_discovery_returns_a_specification_for_each_corpus():
+    discovered = module.discover_specifications(cast(Any, Connection(metadata_rows())))
+
+    assert discovered == {
+        corpus: specification(
+            table_name=mapping.table_name,
+            model_name=f"model-{corpus}",
+        )
+        for corpus, mapping in CORPUS_MAPPINGS.items()
     }
 
 
-def test_missing_database_url_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("POSTGRES_URL", raising=False)
-
-    with pytest.raises(ValueError, match="POSTGRES_URL"):
-        LangChainRetriever(embeddings=object(), store_kwargs=STORE_KWARGS)
-
-
 @pytest.mark.parametrize(
-    ("call", "value", "method", "kwargs"),
+    ("rows", "message"),
     [
-        ("similarity_search", "papyrus", "similarity_search", {"k": 2}),
-        ("mmr_search", "varied papyri", "mmr_search", {"k": 3, "fetch_k": 8}),
-        (
-            "similarity_search_by_vec",
-            [0.1, 0.2],
-            "similarity_search_by_vector",
-            {"k": 2},
+        pytest.param(
+            metadata_rows()[:-1], "Missing embedding metadata", id="missing-corpus"
         ),
-        (
-            "mmr_search_by_vec",
-            [0.3, 0.4],
-            "mmr_search_by_vector",
-            {"k": 3, "fetch_k": 8},
+        pytest.param(
+            [(*metadata_rows()[0][:2], None, *metadata_rows()[0][3:])],
+            "dimension",
+            id="missing-dimension",
+        ),
+        pytest.param(
+            [(*metadata_rows()[0][:3], None, *metadata_rows()[0][4:])],
+            "provider",
+            id="missing-provider",
+        ),
+        pytest.param(
+            [(*metadata_rows()[0][:4], [], *metadata_rows()[0][5:])],
+            "provider_options",
+            id="invalid-provider-options",
+        ),
+        pytest.param(
+            [(*metadata_rows()[0][:3], "unknown", *metadata_rows()[0][4:])],
+            "unsupported embedding provider",
+            id="unsupported-provider",
+        ),
+        pytest.param(
+            [(*metadata_rows()[0][:6], 9)],
+            "contract version",
+            id="wrong-contract-version",
         ),
     ],
 )
-def test_searches_forward_to_the_matching_store_operation(
-    store_boundary: SimpleNamespace,
-    call: str,
-    value: Any,
-    method: str,
-    kwargs: dict[str, Any],
-) -> None:
+def test_discovery_rejects_invalid_metadata(rows, message):
+    with pytest.raises(EmbeddingContractError, match=message):
+        module.discover_specifications(cast(Any, Connection(rows)))
+
+
+def test_discovery_wraps_database_errors_and_rolls_back():
+    connection = Connection([], RuntimeError("missing table"))
+    with pytest.raises(EmbeddingContractError, match="current Scrapyrus"):
+        module.discover_specifications(cast(Any, connection))
+    assert connection.rollback_calls == 1
+
+
+# --- embedding client construction ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("profile", "expected"),
+    [("local", "http://embed/v1"), (None, None)],
+)
+def test_endpoint_resolves_an_optional_profile(monkeypatch, profile, expected):
+    monkeypatch.setenv("EMBEDDING_ENDPOINT_LOCAL", "http://embed/v1")
+
+    assert module._endpoint(specification(endpoint_profile=profile)) == expected
+
+
+def test_endpoint_requires_a_configured_profile(monkeypatch):
+    monkeypatch.delenv("EMBEDDING_ENDPOINT_LOCAL", raising=False)
+
+    with pytest.raises(EmbeddingContractError, match="EMBEDDING_ENDPOINT_LOCAL"):
+        module._endpoint(specification())
+
+
+def test_vllm_secret_defaults_to_a_non_secret_placeholder(monkeypatch):
+    monkeypatch.delenv("VLLM_API_KEY", raising=False)
+
+    vllm_secret = module._secret("vllm")
+
+    assert vllm_secret is not None
+    assert vllm_secret.get_secret_value() == "EMPTY"
+
+
+def test_a_provider_without_credentials_has_no_secret():
+    assert module._secret("huggingface") is None
+
+
+def test_openai_secret_requires_an_api_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(EmbeddingContractError, match="OPENAI_API_KEY"):
+        module._secret("openai")
+
+
+def test_openai_compatible_factory_uses_configured_options(monkeypatch):
+    monkeypatch.setenv("EMBEDDING_ENDPOINT_LOCAL", "http://embed/v1")
+    monkeypatch.setenv("VLLM_API_KEY", "key")
+
+    openai = module.build_embeddings(specification())
+
+    assert openai.model == "model-a"
+    assert str(openai.openai_api_base) == "http://embed/v1"
+
+
+def test_voyage_factory_uses_allowlisted_options(monkeypatch):
+    monkeypatch.setenv("VOYAGE_API_KEY", "key")
+
+    voyage = module.build_embeddings(
+        specification(
+            provider="voyageai",
+            endpoint_profile=None,
+            provider_options={
+                "output_dimension": 1024,
+                "truncation": False,
+                "batch_size": 64,
+                "document_input_type": "document",
+                "query_input_type": "query",
+            },
+        )
+    )
+    assert voyage.output_dimension == 1024
+    assert voyage.truncation is False
+
+
+def test_embedding_factory_rejects_an_unsupported_option(monkeypatch):
+    monkeypatch.setenv("EMBEDDING_ENDPOINT_LOCAL", "http://embed/v1")
+
+    with pytest.raises(EmbeddingContractError, match="unsupported"):
+        module.build_embeddings(specification(provider_options={"surprise": True}))
+
+
+def test_embedding_factory_rejects_an_unsupported_provider():
+    with pytest.raises(EmbeddingContractError, match="unsupported embedding provider"):
+        module.build_embeddings(
+            specification(provider="unknown", endpoint_profile=None)
+        )
+
+
+# --- database table validation ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("embedding_size", "embedding_column", "column_type"),
+    [
+        pytest.param(2, "embedding", "vector(2)", id="vector"),
+        pytest.param(2560, "search_embedding", "halfvec(2560)", id="large-halfvec"),
+    ],
+)
+def test_table_validation_selects_dimension_appropriate_column(
+    embedding_size, embedding_column, column_type
+):
+    mapping = CORPUS_MAPPINGS["transcriptions"]
+    basic = [
+        (name, "text")
+        for name in {
+            mapping.id_column,
+            mapping.content_column,
+            *mapping.metadata_columns,
+        }
+    ]
+    connection = Connection([*basic, (embedding_column, column_type)])
+
+    assert (
+        module._validate_table(
+            cast(Any, connection), mapping, specification(embedding_size=embedding_size)
+        )
+        == embedding_column
+    )
+
+
+def test_table_validation_rejects_missing_required_columns():
+    mapping = CORPUS_MAPPINGS["transcriptions"]
+
+    with pytest.raises(EmbeddingContractError, match="missing required columns"):
+        module._validate_table(cast(Any, Connection([])), mapping, specification())
+
+
+def test_table_validation_rejects_the_wrong_embedding_type():
+    mapping = CORPUS_MAPPINGS["transcriptions"]
+    basic = [
+        (name, "text")
+        for name in {
+            mapping.id_column,
+            mapping.content_column,
+            *mapping.metadata_columns,
+        }
+    ]
+
+    with pytest.raises(EmbeddingContractError, match=r"expected 'vector\(2\)'"):
+        module._validate_table(
+            cast(Any, Connection([*basic, ("embedding", "vector")])),
+            mapping,
+            specification(),
+        )
+
+
+# --- individual corpus retrieval --------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("method", "query", "expected_call"),
+    [
+        pytest.param(
+            "similarity_search",
+            "lease",
+            ("similarity", "lease", {"k": 2}),
+            id="similarity",
+        ),
+        pytest.param(
+            "mmr_search",
+            "variety",
+            ("mmr", "variety", {"k": 3, "fetch_k": 8}),
+            id="mmr",
+        ),
+    ],
+)
+def test_retriever_forwards_searches(method, query, expected_call):
+    store = RecordingStore()
     retriever = LangChainRetriever(
-        embeddings=object(),
-        store_kwargs=STORE_KWARGS,
+        store=cast(Any, store),
         similarity_search_kwargs={"k": 2},
         mmr_search_kwargs={"k": 3, "fetch_k": 8},
     )
 
-    result = getattr(retriever, call)(value)
+    result = getattr(retriever, method)(query)
 
-    assert result is store_boundary.store.documents
-    assert result[0].metadata["tm_id"] == 123456
-    assert store_boundary.store.calls == [(method, value, kwargs)]
-
-
-def test_searches_default_to_no_extra_store_arguments(
-    store_boundary: SimpleNamespace,
-) -> None:
-    retriever = LangChainRetriever(embeddings=object(), store_kwargs=STORE_KWARGS)
-
-    retriever.similarity_search("papyrus")
-    retriever.mmr_search("papyrus")
-
-    assert store_boundary.store.calls == [
-        ("similarity_search", "papyrus", {}),
-        ("mmr_search", "papyrus", {}),
-    ]
+    assert result is store.documents
+    assert store.calls == [expected_call]
 
 
-def test_from_config_uses_real_yaml_loading_and_object_construction(
-    tmp_path: Any,
-    store_boundary: SimpleNamespace,
-) -> None:
-    config = tmp_path / "retriever.yaml"
-    config.write_text(
-        yaml.safe_dump(
-            {
-                "embeddings": {
-                    "type": "types.SimpleNamespace",
-                    "kwargs": {"name": "configured-embeddings"},
-                },
-                "store_kwargs": STORE_KWARGS,
-                "similarity_search_kwargs": {"k": 4},
-                "mmr_search_kwargs": {"k": 2, "fetch_k": 6},
-            }
-        )
+# --- retriever collection construction --------------------------------------
+
+
+def test_build_retrievers_shares_engine_and_identical_clients(monkeypatch):
+    specs = {
+        corpus: specification(table_name=mapping.table_name)
+        for corpus, mapping in CORPUS_MAPPINGS.items()
+    }
+    engine = ClosingEngine()
+    stores = []
+    clients = []
+    monkeypatch.setenv("POSTGRES_URL", "postgresql://reader@db/papyri")
+    monkeypatch.setattr(module, "discover_specifications", lambda _connection: specs)
+    monkeypatch.setattr(module, "_validate_table", lambda *_args: "embedding")
+    monkeypatch.setattr(
+        module,
+        "build_embeddings",
+        lambda _spec: clients.append(FakeEmbeddings()) or clients[-1],
+    )
+    monkeypatch.setattr(module.PGEngine, "from_connection_string", lambda _url: engine)
+
+    def create(*args, **kwargs):
+        stores.append((args, kwargs))
+        return RecordingStore()
+
+    monkeypatch.setattr(module.PGVectorStore, "create_sync", create)
+    retrievers, result_engine = module.build_retrievers(cast(Any, object()))
+    assert set(retrievers) == set(CORPUS_MAPPINGS)
+    assert result_engine is engine
+    assert len(clients) == 1
+    assert len(clients[0].queries) == 1
+    assert len(stores) == 3
+    assert all(call[1]["metadata_json_column"] is None for call in stores)
+    assert all(
+        call[1]["distance_strategy"] is module.DistanceStrategy.COSINE_DISTANCE
+        for call in stores
     )
 
-    retriever = LangChainRetriever.from_config(config)
 
-    assert retriever.embeddings.name == "configured-embeddings"
-    assert retriever.similarity_search_kwargs == {"k": 4}
-    assert retriever.mmr_search_kwargs == {"k": 2, "fetch_k": 6}
+def test_build_retrievers_rejects_a_missing_database_url(monkeypatch):
+    monkeypatch.delenv("POSTGRES_URL", raising=False)
+
+    with pytest.raises(EmbeddingContractError, match="POSTGRES_URL"):
+        module.build_retrievers(cast(Any, object()))
 
 
-@pytest.mark.parametrize("store_kwargs", [None, {}])
-def test_incomplete_table_contract_is_rejected(
-    store_boundary: SimpleNamespace, store_kwargs: Any
-) -> None:
-    with pytest.raises(ValueError, match="store_kwargs"):
-        LangChainRetriever(embeddings=object(), store_kwargs=store_kwargs)
+def test_build_retrievers_closes_the_engine_after_a_bad_probe(monkeypatch):
+    engine = ClosingEngine()
+    specs = {
+        corpus: specification(table_name=mapping.table_name)
+        for corpus, mapping in CORPUS_MAPPINGS.items()
+    }
+    monkeypatch.setenv("POSTGRES_URL", "postgresql://reader@db/papyri")
+    monkeypatch.setattr(module, "discover_specifications", lambda _connection: specs)
+    monkeypatch.setattr(module, "_validate_table", lambda *_args: "embedding")
+    monkeypatch.setattr(module, "build_embeddings", lambda _spec: FakeEmbeddings(3))
+    monkeypatch.setattr(module.PGEngine, "from_connection_string", lambda _url: engine)
+    with pytest.raises(EmbeddingContractError, match="provider returned 3"):
+        module.build_retrievers(cast(Any, object()))
+    assert engine.close_calls == 1

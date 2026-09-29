@@ -10,6 +10,7 @@ from .exceptions import DecisionError
 
 
 def _error_events(exc: Exception) -> Iterator[dict[str, Any]]:
+    """Yield terminal stream events describing an unexpected error."""
     yield {
         "type": "replace",
         "content": (

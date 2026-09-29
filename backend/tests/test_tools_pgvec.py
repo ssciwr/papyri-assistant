@@ -10,27 +10,15 @@ from papyri_backend.tools import pgvec
     [
         (
             pgvec.similarity_search,
-            {"query": "Which Oxyrhynchus texts mention a lease?"},
+            {"query": "Which Oxyrhynchus texts mention a lease?", "corpus": "transcriptions"},
             "similarity_search",
             "Which Oxyrhynchus texts mention a lease?",
         ),
         (
             pgvec.mmr_search,
-            {"query": "Find varied evidence about leases"},
+            {"query": "Find varied evidence about leases", "corpus": "translations"},
             "mmr_search",
             "Find varied evidence about leases",
-        ),
-        (
-            pgvec.similarity_search_by_vec,
-            {"vec": [0.1, 0.2, 0.3]},
-            "similarity_search_by_vec",
-            [0.1, 0.2, 0.3],
-        ),
-        (
-            pgvec.mmr_search_by_vec,
-            {"vec": [0.4, 0.5, 0.6]},
-            "mmr_search_by_vec",
-            [0.4, 0.5, 0.6],
         ),
     ],
 )
@@ -42,22 +30,24 @@ def test_search_tools_forward_input_and_preserve_documents(
     method: str,
     value: Any,
 ) -> None:
-    monkeypatch.setattr(pgvec, "retriever", lambda: fake_retriever)
+    selected = []
+    monkeypatch.setattr(
+        pgvec, "retriever", lambda corpus: selected.append(corpus) or fake_retriever
+    )
 
     result = tool.invoke(arguments)
 
     assert result is fake_retriever.documents
     assert result[0] is fake_retriever.documents[0]
     assert fake_retriever.calls == [(method, value)]
+    assert selected == [arguments["corpus"]]
 
 
 @pytest.mark.parametrize(
     ("tool", "arguments"),
     [
-        (pgvec.similarity_search, {"query": "lease"}),
-        (pgvec.mmr_search, {"query": "lease"}),
-        (pgvec.similarity_search_by_vec, {"vec": [0.1, 0.2]}),
-        (pgvec.mmr_search_by_vec, {"vec": [0.1, 0.2]}),
+        (pgvec.similarity_search, {"query": "lease", "corpus": "transcriptions"}),
+        (pgvec.mmr_search, {"query": "lease", "corpus": "translations"}),
     ],
 )
 def test_search_tools_do_not_mask_retriever_failures(
@@ -68,7 +58,7 @@ def test_search_tools_do_not_mask_retriever_failures(
 ) -> None:
     failure = RuntimeError("vector provider unavailable")
     fake_retriever.error = failure
-    monkeypatch.setattr(pgvec, "retriever", lambda: fake_retriever)
+    monkeypatch.setattr(pgvec, "retriever", lambda _corpus: fake_retriever)
 
     with pytest.raises(RuntimeError, match="vector provider unavailable") as raised:
         tool.invoke(arguments)

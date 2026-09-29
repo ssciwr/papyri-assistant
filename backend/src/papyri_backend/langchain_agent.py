@@ -30,14 +30,17 @@ class _InlineReasoningParser:
     """Classify inline reasoning without retaining the complete message."""
 
     def __init__(self, *, assume_prefilled: bool):
+        """Initialize the parser for prefixed or prefilled reasoning."""
         self._mode = "reasoning" if assume_prefilled else "prefix"
         self._buffer = ""
 
     def feed(self, delta: str) -> list[tuple[str, str]]:
+        """Consume a text delta and return complete classified fragments."""
         self._buffer += delta
         return self._drain()
 
     def finish(self) -> list[tuple[str, str]]:
+        """Flush the remaining buffered text as a classified fragment."""
         if not self._buffer:
             return []
         kind = "reasoning" if self._mode == "reasoning" else "text"
@@ -45,6 +48,7 @@ class _InlineReasoningParser:
         return [(kind, delta)]
 
     def _drain(self) -> list[tuple[str, str]]:
+        """Drain complete classified fragments from the buffer."""
         if self._mode == "text":
             delta, self._buffer = self._buffer, ""
             return [("text", delta)] if delta else []
@@ -545,6 +549,7 @@ class LangChainAgent:
         return self._stream_prepared_turn(payload)
 
     def _stream_prepared_turn(self, payload: Any) -> Iterator[dict[str, Any]]:
+        """Stream a prepared turn and emit its terminal event."""
         has_answer = False
         failed = False
         usage = None

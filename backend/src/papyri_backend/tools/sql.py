@@ -73,6 +73,7 @@ def inspect_sql() -> str:
 
 
 def _guard_config() -> dict | str:
+    """Build the SQL guard configuration from the public schema."""
     rows = _rows(_SCHEMA_QUERY)
     if isinstance(rows, str):
         return rows

@@ -78,6 +78,7 @@ def _expand(text: str) -> str:
     """
 
     def replace(match: re.Match[str]) -> str:
+        """Resolve one environment variable expression."""
         name, fallback = match.group(1), match.group(2)
         # Colon-minus semantics, as in the shell: an empty value counts as
         # unset, which is what a compose file that passes an unset variable
