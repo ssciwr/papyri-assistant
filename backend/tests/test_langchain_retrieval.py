@@ -63,6 +63,38 @@ class Connection:
         self.rollback_calls += 1
 
 
+class RecordingStore:
+    def __init__(self):
+        self.documents = [Document(page_content="chunk")]
+        self.calls = []
+
+    def similarity_search(self, value, **kwargs):
+        self.calls.append(("similarity", value, kwargs))
+        return self.documents
+
+    def max_marginal_relevance_search(self, value, **kwargs):
+        self.calls.append(("mmr", value, kwargs))
+        return self.documents
+
+
+class FakeEmbeddings:
+    def __init__(self, dimensions=2):
+        self.dimensions = dimensions
+        self.queries = []
+
+    def embed_query(self, query):
+        self.queries.append(query)
+        return [0.0] * self.dimensions
+
+
+class ClosingEngine:
+    def __init__(self):
+        self.close_calls = 0
+
+    def close(self):
+        self.close_calls += 1
+
+
 def metadata_rows():
     return [
         (
@@ -76,6 +108,21 @@ def metadata_rows():
         )
         for corpus, mapping in CORPUS_MAPPINGS.items()
     ]
+
+
+# --- embedding metadata discovery -------------------------------------------
+
+
+def test_discovery_returns_a_specification_for_each_corpus():
+    discovered = module.discover_specifications(cast(Any, Connection(metadata_rows())))
+
+    assert discovered == {
+        corpus: specification(
+            table_name=mapping.table_name,
+            model_name=f"model-{corpus}",
+        )
+        for corpus, mapping in CORPUS_MAPPINGS.items()
+    }
 
 
 @pytest.mark.parametrize(
@@ -123,11 +170,7 @@ def test_discovery_wraps_database_errors_and_rolls_back():
     assert connection.rollback_calls == 1
 
 
-def test_endpoint_requires_a_configured_profile(monkeypatch):
-    monkeypatch.delenv("EMBEDDING_ENDPOINT_LOCAL", raising=False)
-
-    with pytest.raises(EmbeddingContractError, match="EMBEDDING_ENDPOINT_LOCAL"):
-        module._endpoint(specification())
+# --- embedding client construction ------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -140,11 +183,11 @@ def test_endpoint_resolves_an_optional_profile(monkeypatch, profile, expected):
     assert module._endpoint(specification(endpoint_profile=profile)) == expected
 
 
-def test_openai_secret_requires_an_api_key(monkeypatch):
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+def test_endpoint_requires_a_configured_profile(monkeypatch):
+    monkeypatch.delenv("EMBEDDING_ENDPOINT_LOCAL", raising=False)
 
-    with pytest.raises(EmbeddingContractError, match="OPENAI_API_KEY"):
-        module._secret("openai")
+    with pytest.raises(EmbeddingContractError, match="EMBEDDING_ENDPOINT_LOCAL"):
+        module._endpoint(specification())
 
 
 def test_vllm_secret_defaults_to_a_non_secret_placeholder(monkeypatch):
@@ -158,6 +201,13 @@ def test_vllm_secret_defaults_to_a_non_secret_placeholder(monkeypatch):
 
 def test_a_provider_without_credentials_has_no_secret():
     assert module._secret("huggingface") is None
+
+
+def test_openai_secret_requires_an_api_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(EmbeddingContractError, match="OPENAI_API_KEY"):
+        module._secret("openai")
 
 
 def test_openai_compatible_factory_uses_configured_options(monkeypatch):
@@ -202,6 +252,9 @@ def test_embedding_factory_rejects_an_unsupported_provider():
         module.build_embeddings(
             specification(provider="unknown", endpoint_profile=None)
         )
+
+
+# --- database table validation ----------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -259,18 +312,7 @@ def test_table_validation_rejects_the_wrong_embedding_type():
         )
 
 
-class RecordingStore:
-    def __init__(self):
-        self.documents = [Document(page_content="chunk")]
-        self.calls = []
-
-    def similarity_search(self, value, **kwargs):
-        self.calls.append(("similarity", value, kwargs))
-        return self.documents
-
-    def max_marginal_relevance_search(self, value, **kwargs):
-        self.calls.append(("mmr", value, kwargs))
-        return self.documents
+# --- individual corpus retrieval --------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -304,22 +346,7 @@ def test_retriever_forwards_searches(method, query, expected_call):
     assert store.calls == [expected_call]
 
 
-class FakeEmbeddings:
-    def __init__(self, dimensions=2):
-        self.dimensions = dimensions
-        self.queries = []
-
-    def embed_query(self, query):
-        self.queries.append(query)
-        return [0.0] * self.dimensions
-
-
-class ClosingEngine:
-    def __init__(self):
-        self.close_calls = 0
-
-    def close(self):
-        self.close_calls += 1
+# --- retriever collection construction --------------------------------------
 
 
 def test_build_retrievers_shares_engine_and_identical_clients(monkeypatch):
