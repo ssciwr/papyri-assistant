@@ -28,18 +28,25 @@ def test_prose_survives_being_loaded(tmp_path) -> None:
     assert config["system_prompt"] == "You are helpful. Be concise. Cite."
 
 
-def test_import_paths_are_resolved_under_type_and_tools(tmp_path) -> None:
+def test_an_import_path_under_type_is_resolved(tmp_path) -> None:
     path = write(
         tmp_path,
-        "model:\n"
-        "  type: langchain_openai.ChatOpenAI\n"
-        "tools:\n"
-        "  - papyri_backend.tools.sql.query_sql\n",
+        "model:\n  type: langchain_openai.ChatOpenAI\n",
     )
 
     config = utils.load_config(path)
 
     assert inspect.isclass(config["model"]["type"])
+
+
+def test_an_import_path_under_tools_is_resolved(tmp_path) -> None:
+    path = write(
+        tmp_path,
+        "tools:\n  - papyri_backend.tools.sql.query_sql\n",
+    )
+
+    config = utils.load_config(path)
+
     assert config["tools"][0].name == "query_sql"
 
 

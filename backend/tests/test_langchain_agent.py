@@ -631,6 +631,9 @@ def test_multiple_actions_resume_in_request_order() -> None:
 
 def test_non_object_decision_json_is_treated_as_an_ordinary_question() -> None:
     assert LangChainAgent._as_decision('[{"interrupt_id": "nope"}]') is None
+
+
+def test_a_decision_with_a_null_interrupt_id_is_recognised() -> None:
     assert LangChainAgent._as_decision('{"interrupt_id": null, "decisions": []}') == {
         "interrupt_id": None,
         "decisions": [],
