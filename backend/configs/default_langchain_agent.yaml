@@ -33,6 +33,16 @@ tools:
 middleware:
   - type: langchain.agents.middleware.TodoListMiddleware
     kwargs: {}
+  - type: deepagents.middleware.skills.SkillsMiddleware
+    kwargs:
+      backend: deepagents.backends.FilesystemBackend
+      sources:
+        # scholar
+        - ${SKILL_DIR:-/app/skills}/name/SKILL.md
+        - ${SKILL_DIR:-/app/skills}/name/SKILL.md
+        # reviewer
+        - ${SKILL_DIR:-/app/skills}/name/SKILL.md
+        - ${SKILL_DIR:-/app/skills}/name/SKILL.md
 
 # "reject" carries an optional reason, which reaches the model as the refused
 # tool call's result. Saying what to do instead belongs there rather than in a
