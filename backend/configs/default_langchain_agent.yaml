@@ -37,12 +37,11 @@ middleware:
     kwargs:
       backend: deepagents.backends.FilesystemBackend
       sources:
-        # scholar
-        - ${SKILL_DIR:-/app/skills}/name/SKILL.md
-        - ${SKILL_DIR:-/app/skills}/name/SKILL.md
-        # reviewer
-        - ${SKILL_DIR:-/app/skills}/name/SKILL.md
-        - ${SKILL_DIR:-/app/skills}/name/SKILL.md
+        - ${SKILL_DIR:-/app/skills}/papyrological-research/SKILL.md
+        - ${SKILL_DIR:-/app/skills}/process-leiden-annotation/SKILL.md
+        - ${SKILL_DIR:-/app/skills}/report-writing/SKILL.md
+        - ${SKILL_DIR:-/app/skills}/workflow-decision/SKILL.md
+        - ${SKILL_DIR:-/app/skills}/review/SKILL.md
 
 # "reject" carries an optional reason, which reaches the model as the refused
 # tool call's result. Saying what to do instead belongs there rather than in a
