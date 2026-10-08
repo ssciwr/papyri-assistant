@@ -6,13 +6,13 @@ This report fails the acceptance criteria. Do not write like this. Its faults ar
 
 ## Answer
 
-There are exactly 28 libelli from the Decian persecution preserved. This was established by searching the database for the keyword "libellus", which returned 28 documents.
+There are exactly 29 libelli from the Decian persecution preserved. This was established by searching the database for the keyword "libellus", which returned 29 documents.
 
 The libelli were certificates that Christians had to obtain to prove they had sacrificed to the Roman gods. Decius issued his edict in 250 to root out Christianity, and Christians who obtained a libellus were called *libellatici*. The certificates were issued all over the Roman Empire, which is why so many survive.
 
 Famous examples include P.Mich. III 157 and the libellus of Aurelia Ammonous, priestess of Petesouchos, which shows that even pagan priests had to deny Christ. Other libelli are in Oxyrhynchos and in the Fayum.
 
-Some scholars have suggested different numbers, but the database is the most complete source, so 28 is the correct figure.
+Some scholars have suggested different numbers, but the database is the most complete source, so 29 is the correct figure.
 
 ## Sources
 
@@ -27,7 +27,7 @@ Some scholars have suggested different numbers, but the database is the most com
 
 - **The number is wrong, and the method that produced it is not described.** The keyword search returns petitions and court proceedings from 138 to the 6th century CE as well as certificates. The report neither checked the hits nor described the query, so the reader cannot see the error.
 - **It makes no arguments.** It gives a claim with no evidence for or against it and no reasoning the reader could retrace.
-- **It states an uncertain figure as certain.** It says "exactly 28" and "the correct figure" without naming any uncertainty: fragments, uncertain dates, possible duplicate records, gaps in the corpus.
+- **It states an uncertain figure as certain.** It says "exactly 29" and "the correct figure" without naming any uncertainty: fragments, uncertain dates, possible duplicate records, gaps in the corpus.
 - **It dismisses alternatives instead of discussing them.** It waves away the literature's counts as "different numbers" without saying what they are or why they differ.
 - **It makes historical claims without evidence.**
   - Certificates "all over the Roman Empire": every surviving libellus comes from Egypt.
