@@ -28,8 +28,7 @@ tools:
   - papyri_backend.tools.pgvec.similarity_search
   - papyri_backend.tools.pgvec.mmr_search
 
-# Deep Agents installs its own model-aware SummarizationMiddleware. Do not add
-# LangChain's middleware here: a same-named entry replaces the enhanced default.
+# Remark: A same-named entry replaces the enhanced default.
 middleware:
   - type: langchain.agents.middleware.TodoListMiddleware
     kwargs: {}
@@ -37,11 +36,10 @@ middleware:
     kwargs:
       backend: deepagents.backends.FilesystemBackend
       sources:
-        - ${SKILL_DIR:-/app/skills}/papyrological-research/SKILL.md
-        - ${SKILL_DIR:-/app/skills}/process-leiden-annotation/SKILL.md
-        - ${SKILL_DIR:-/app/skills}/report-writing/SKILL.md
-        - ${SKILL_DIR:-/app/skills}/workflow-decision/SKILL.md
-        - ${SKILL_DIR:-/app/skills}/review/SKILL.md
+        - ${SKILL_DIR:-/app/skills}/data-interpretation
+        - ${SKILL_DIR:-/app/skills}/papyrological-research
+        - ${SKILL_DIR:-/app/skills}/report-writing
+        - ${SKILL_DIR:-/app/skills}/review
 
 # "reject" carries an optional reason, which reaches the model as the refused
 # tool call's result. Saying what to do instead belongs there rather than in a
@@ -89,6 +87,13 @@ permissions:
       operations: ["read", "write"]
       paths: ["/large_tool_results", "/large_tool_results/**"]
       mode: "allow"
+  # scratchpad for working notes. It has no backend route, so it lives in graph
+  # state and is gone when the session is replaced
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["read", "write"]
+      paths: ["/scratchpad", "/scratchpad/**"]
+      mode: "allow"
   # deny every filesystem read/write other than in explicitly configured routes
   - type: deepagents.FilesystemPermission
     kwargs:
@@ -115,11 +120,6 @@ backend:
         kwargs:
           virtual_mode: True
           root_dir: ${MEMORY_DIR:-/app/memory}
-      "/skills/":
-        type: deepagents.backends.FilesystemBackend
-        kwargs:
-          virtual_mode: True
-          root_dir: ${SKILL_DIR:-/app/skills}
       "/logs/":
         type: deepagents.backends.FilesystemBackend
         kwargs:
