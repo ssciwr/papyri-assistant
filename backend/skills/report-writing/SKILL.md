@@ -1,60 +1,60 @@
 ---
 name: report-writing
-description: Manual for writing a research report for a papyrological question. Use when asked to report on you findings about a user's question that involves papyrological research using the supplied database.
+description: Write the final research report answering a user's papyrological question. Use once the research is done and the findings must be written up for the user.
 license: MIT
 metadata:
-  author: Harald Mack
-  version: 0.1
-allowed_tools: write_todos, read_file, write_file, grep, edit_file, task
+  version: 0.2
+allowed-tools: write_todos, read_file, write_file, grep, edit_file, task, query_sql
 ---
 
 # Report writing
 
-## When to use
-Use this skill whenever you have been handed research results and the task to write them into a report that is to be read by the user.
+The report is a structured presentation of the user's question and how it was interpreted, the workflow and methods used to answer it, the reasoning that led to the answer (or why several answers remain possible, or no conclusion can be reached), the alternatives that were rejected, and a closing summary.
 
-## How to write a scientifc report on a papyrological question
+The reasoning is set out as **arguments**. An argument is a claim, the evidence for and against it, and the reasoning that leads from the evidence to the claim, set out so the reader can retrace every step and check every source.
 
-### Properties of a good scientific report
-A good scientific report should:
-- Relevance: The input question must be adressed clearly
-- Rigor: Any argument made must contain the claim it makes, the found evidence for and against this claim, as well as the reasoning for why the claim has been made given the evidence. Any argument must be presented in such a way that the reasoning can be reconstructed from the evidence and claim by the reader.
-- Critical interpretation is highlighted: The interpretation of the evidence must be incorporated, including critical appraisal of author's motive or association, history of scientific edition or interpretation and why evidence is considered trustworthy or not
-- Research integrity: Evidence is not presented selectively in favour or against a claim, but any presentation is focused on outlining why a conclusion is forced by the available evidence. If multiple answers are possible and evidence doesn't favour one, the reasons for this and the involved reasoning and evidence interpretation are clearly stated.
-- Alternatives to the presented reasoning and conclusions are explored and discussed
-- Evidence is presented with references to the original document in such a way that the reader can verify the claims made about or derived from the material.
-- Methods and workflows employed to interrogate the material and to gather evidence are clearly presented and discussed for each step involved.
-- The source corpora and tools used to gather evidence and interrogate the source material must be mentioned.
-- Research- and edition history can be
+## Input and output
 
-### Workflow
+Input: the user's question, how it was interpreted, the workflow and methods used to address it, the conclusions drawn, and the evidence for and against them.
 
-### Structure
-Write the report in this order:
+If any of these are missing:
+- When you were handed the task by another agent, return a list of the missing items instead of a report.
+- Otherwise, find them in the conversation or in /large_tool_results or /scratchpad, and research what is still missing.
 
-1. **Question and approach**: Restate the user's question and summarize in a few sentences how it was processed.
-2. **Methods and sources**: Name the corpora and tools used, and describe the workflow step by step, noting where a step limits what the evidence can show.
-3. **Findings**: For each answer or claim:
-   - the claim
-   - the evidence for and against it, with references
-   - a critical assessment of the evidence (uncertain dates, readings, orthography, semantics, editorial history, author's motive)
-   - the reasoning from the evidence to the claim
+Output: the report, in the structure below.
+
+## Workflow
+
+1. Plan the report sections with `write_todos`.
+2. Verify every source you will cite: confirm with `query_sql` that it exists in the database, and collect its ids, title, date and place.
+3. Write the report in the structure below.
+4. Check the draft against the acceptance criteria, and revise until every criterion is met.
+
+## Structure
+
+1. **Question and approach**: Restate the user's question and how it was interpreted, then summarize in a few sentences how it was researched.
+2. **Methods and sources**: Name the corpora and tools used. Describe the workflow step by step, and say where a step limits what the evidence can show.
+3. **Findings**: One argument per claim. For each one:
+   - State the claim.
+   - Give the evidence for and the evidence against it, with references. Include all relevant evidence, including evidence that weakens the conclusion.
+   - Assess the evidence critically: uncertain dates, readings, orthography or semantics; the author's motive or affiliations; the history of the edition and its interpretation; and why each source is or is not trustworthy.
+   - Give the reasoning from the evidence to the claim.
 4. **Alternatives**: Other answers that were considered, and why each was rejected or remains open. If the evidence does not decide between answers, say so and explain why.
-5. **Summary**: A short answer to the question, including how certain it is.
-6. **References**: A numbered list matching the in-text citations. Each entry gives corpus ids (e.g. Trismegistos), title, date and place, plus a link to an online edition and the current holding institution where available. Only cite sources whose existence and accessibility you have verified.
+5. **Summary**: A short answer to the question, stating how certain it is.
+6. **References**: A numbered list that matches the in-text citations. Each entry gives the corpus ids (e.g. Trismegistos), title, date and place. Where available, add a link to an online edition and the institution that currently holds the material.
 
-### Acceptance criteria
-- Input user question clearly addressed
-- Claims and reasoning clearly presented
-- Evidence for and against each made claim and each argument presented
-- Evidence critically assessed with respect to uncertainties in date, time, textual interpretation, orthography or semantics
-- Reasoning leading to the answer is presented with arguments such that the reasoning process can be reconstructed from arguments and evidence
-- Evidences is accompanied by references to the cited source material and the existence and accessability has been verified. This can be a references list at the end with numbers or other links in the text, or inline references.
-- Uncertainties in evidence highlighted and mentioned where they limit or enhance arguments.
-- Clearly presented where a multiple answers are possible or where a final conclusion has been abstained from, and why.
-- The methods, workflows and tools used during the research process are presented, and workflows are discussed in a stepwise manner
-- References contain at least corpora ids, title, dates and places, e.g., trismegistos ids, date-text and place-text, but whenever available, links to online representations of them should be provided. Where possible it should be added where the material is currently held, too.
-- The report starts with a summary of the user question and how it has been processed
-- It gives a clear outline of the methods and tools involved
-- It presents the answers, reasoning that leads to them, evidence that forces this conclusion, alternatives that have been rejected and why.
-- It gives a short summary at the end.
+## Acceptance criteria
+
+- The user's question is answered directly.
+- Every claim is an argument: it has evidence for and against, and reasoning the reader can retrace.
+- Uncertainties in the evidence are named wherever they weaken or strengthen an argument.
+- Where several answers remain possible, or no conclusion is drawn, the report says so and explains why.
+- Methods, workflow and tools are described step by step.
+- Every cited source has been verified to exist, and its reference entry is complete.
+
+## Examples
+
+Both examples answer the question "How many Libelli from the persecution of Christians under Decius are preserved?". Read them before writing your first report.
+
+- [references/good-report-example.md](references/good-report-example.md): a report that meets every acceptance criterion.
+- [references/bad-report-example.md](references/bad-report-example.md): a report that fails them, followed by a list of its faults.
