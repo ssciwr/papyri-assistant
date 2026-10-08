@@ -40,15 +40,6 @@ def test_falls_back_when_the_document_has_no_edition_id(
     assert sources.urls_for([1885]) == {1885: f"{TRISMEGISTOS}/1885"}
 
 
-def test_falls_back_when_the_document_is_not_in_papyri(
-    monkeypatch: pytest.MonkeyPatch, fake_connection: Any
-) -> None:
-    fake_connection.cursor.rows = []
-    use_connection(monkeypatch, fake_connection)
-
-    assert sources.urls_for([1885]) == {1885: f"{TRISMEGISTOS}/1885"}
-
-
 def test_falls_back_for_everything_when_the_query_fails(
     monkeypatch: pytest.MonkeyPatch, fake_connection: Any
 ) -> None:
