@@ -32,6 +32,8 @@ A claim starts as **provisional**, as soon as the evidence suggests an answer. I
 
 Input: the interpretation file `/scratchpad/interpretation-<topic>.md`. If there is none, interpret the question with the question-interpretation skill first.
 
+In a revision round, the input also includes the review file `/scratchpad/review-<topic>-<round>.md`. Resolve every issue that goes to research: run the searches it requires, record them as steps, and update the claims, alternatives and gaps in the existing record.
+
 Output: a research record at `/scratchpad/research-<topic>.md`, with the same `<topic>` as the interpretation file, in the structure under "Research record" below. Once the record meets the acceptance criteria, write the report with the report-writing skill, or pass the record's path to the agent that writes it.
 
 ## Workflow
@@ -43,7 +45,7 @@ Output: a research record at `/scratchpad/research-<topic>.md`, with the same `<
 Then work through steps 4–8 for each sub-question, in the planned order.
 
 4. **Search.** Run the planned routes, and record each step: the sub-question it serves, its purpose, the tool, the exact query or search text, the number of results, and its limitation.
-5. **Check every candidate.** Read its date, place, title and text, decide whether it belongs to the answer, and record the decision and the reason. Use the data-interpretation skill to read transcriptions and translations, especially their editorial signs. Look into every document that only one route found, and every document a route should have found but did not.
+5. **Check every candidate.** Read its date, place, title and text, decide whether it belongs to the answer, and record the decision and the reason. Look into every document that only one route found, and every document a route should have found but did not.
 6. **Formulate provisional claims:** one sentence each for what the evidence so far suggests as the answer to the sub-question.
 7. **Try to falsify each provisional claim** with at least one search aimed at evidence against it: an exception, a document outside the expected date or place, a different meaning of the key word. Record what the search finds, including nothing. New candidates go through step 5, and the provisional claims are revised to match.
 8. **Apply source criticism** to every document a provisional claim rests on (see "Source criticism"), and check the reasoning against the inference errors of each involved axis (see "Inference along the axes"). Record each uncertainty next to the evidence it affects.

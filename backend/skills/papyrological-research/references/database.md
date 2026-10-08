@@ -54,7 +54,7 @@ The database is not the whole of published papyrology. A count from it is a lowe
 - prints the regularized spelling (`<reg>`) and drops the scribe's spelling (`<orig>`);
 - drops gaps (`<gap>`) and the marks for unclear letters (`<unclear>`), so words on either side of a gap can run together.
 
-A text search can therefore match a word that the papyrus does not preserve, and it misses the scribe's own spelling. Before you rest an argument on a reading, read `xml_content` for that passage. Use the data-interpretation skill to interpret the editorial signs.
+A text search can therefore match a word that the papyrus does not preserve, and it misses the scribe's own spelling. Before you rest an argument on a reading, read `xml_content` for that passage.
 
 **Words are split across lines.** `text` keeps the line breaks, and a word can run over two lines (`ἐγευσά` / `μεθα`). Remove whitespace before matching a formula.
 
