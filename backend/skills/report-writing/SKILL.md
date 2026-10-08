@@ -23,7 +23,9 @@ If there is no research record, or it lacks any of these:
 - When you were handed the task by another agent, return a list of the missing items instead of a report.
 - Otherwise, complete the research with the papyrological-research skill first.
 
-Output: the report, in the structure below.
+In a revision round, the input also includes the review file `/scratchpad/review-<topic>-<round>.md`. Address every issue that goes to report writing. Issues that go to research are resolved in the research record first; then write the report from the updated record.
+
+Output: the report at `/scratchpad/report-<topic>.md`, with the same `<topic>` as the research record, in the structure below. Hand it to review with the report-review skill.
 
 ## Workflow
 
