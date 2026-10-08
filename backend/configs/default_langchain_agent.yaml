@@ -36,10 +36,7 @@ middleware:
     kwargs:
       backend: deepagents.backends.FilesystemBackend
       sources:
-        - ${SKILL_DIR:-/app/skills}/data-interpretation
-        - ${SKILL_DIR:-/app/skills}/papyrological-research
-        - ${SKILL_DIR:-/app/skills}/report-writing
-        - ${SKILL_DIR:-/app/skills}/review
+        - ${SKILL_DIR:-/app/skills}
 
 # "reject" carries an optional reason, which reaches the model as the refused
 # tool call's result. Saying what to do instead belongs there rather than in a
@@ -66,13 +63,15 @@ permissions:
   - type: deepagents.FilesystemPermission
     kwargs:
       operations: ["read"]
-      paths: ["/skills", "/skills/*.md"]
+      paths:
+        - ${SKILL_DIR:-/app/skills}
       mode: "allow"
   # don´t  allow an agent to rewrite skills directly from within the app
   - type: deepagents.FilesystemPermission
     kwargs:
       operations: ["write"]
-      paths: ["/skills", "/skills/**"]
+      paths:
+        - ${SKILL_DIR:-/app/skills}
       mode: "deny"
   # future: store logfiles here. Don't allow the agent to inspect logfiles and leak them
   # somewhere we don´t know
