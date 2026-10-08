@@ -32,11 +32,12 @@ tools:
 middleware:
   - type: langchain.agents.middleware.TodoListMiddleware
     kwargs: {}
-  - type: deepagents.middleware.skills.SkillsMiddleware
-    kwargs:
-      backend: deepagents.backends.FilesystemBackend
-      sources:
-        - ${SKILL_DIR:-/app/skills}
+
+# Skill directories, as paths in the agent's backend (see the "/skills/" route).
+# deepagents builds the SkillsMiddleware from these with the agent's own backend,
+# so the SKILL.md paths it lists are the ones read_file can open.
+skills:
+  - /skills/
 
 # "reject" carries an optional reason, which reaches the model as the refused
 # tool call's result. Saying what to do instead belongs there rather than in a
@@ -63,15 +64,13 @@ permissions:
   - type: deepagents.FilesystemPermission
     kwargs:
       operations: ["read"]
-      paths:
-        - ${SKILL_DIR:-/app/skills}
+      paths: ["/skills", "/skills/**"]
       mode: "allow"
   # don´t  allow an agent to rewrite skills directly from within the app
   - type: deepagents.FilesystemPermission
     kwargs:
       operations: ["write"]
-      paths:
-        - ${SKILL_DIR:-/app/skills}
+      paths: ["/skills", "/skills/**"]
       mode: "deny"
   # future: store logfiles here. Don't allow the agent to inspect logfiles and leak them
   # somewhere we don´t know
@@ -124,6 +123,11 @@ backend:
         kwargs:
           virtual_mode: True
           root_dir: ${LOGS_DIR:-/app/logs}
+      "/skills/":
+        type: deepagents.backends.FilesystemBackend
+        kwargs:
+          virtual_mode: True
+          root_dir: ${SKILL_DIR:-/app/skills}
 
 # Named subagents the "task" tool can delegate to. Each entry needs name,
 # description and system_prompt, and may add tools/model/interrupt_on.
@@ -138,8 +142,6 @@ backend:
 # store: BaseStore for cross-thread state, required by the "memory" kwarg below
 
 # memory: list of AGENTS.md-style files loaded as persistent context
-
-# skills: list of skill directories exposed to the agent
 
 # response_format: structured-output strategy for the final answer
 
