@@ -243,3 +243,7 @@ __marimo__/
 
 # notes
 notes
+
+# Local evaluation runs. The question set is shared; the records a run produces
+# are working output and stay on the machine that made them.
+backend/evaluation/runs/
