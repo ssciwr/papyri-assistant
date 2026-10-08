@@ -2,7 +2,10 @@ name: papyri-dev
 
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18
+    depends_on:
+      postgres-setup:
+        condition: service_started
     environment:
       POSTGRES_DB: scrapyrus
       POSTGRES_USER: scrapyrus
@@ -13,15 +16,12 @@ services:
       timeout: 5s
       retries: 12
     volumes:
-      - ${POSTGRES_DATA_DIR:-./data/postgres}:/var/lib/postgresql/data
+      - ${POSTGRES_DATA_DIR:-./data/postgres}:/var/lib/postgresql
     ports:
       - "127.0.0.1:55432:5432"
 
   postgres-setup:
-    image: pgvector/pgvector:pg16
-    depends_on:
-      postgres:
-        condition: service_healthy
+    image: pgvector/pgvector:pg18
     environment:
       PGHOST: postgres
       PGPASSWORD: scrapyrus
@@ -38,6 +38,8 @@ services:
       dockerfile: backend/Dockerfile
       target: dev
     depends_on:
+      postgres:
+        condition: service_healthy
       postgres-setup:
         condition: service_completed_successfully
     environment:
