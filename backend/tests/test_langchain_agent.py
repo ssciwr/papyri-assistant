@@ -364,11 +364,13 @@ def test_raw_message_events_preserve_reasoning_and_text_deltas(user_message) -> 
 
     updates = list(_agent(graph).stream_single_turn(user_message("Question")))
 
+    # Reasoning still streams delta by delta, because it is never withheld.
+    # Answer text does not: it is buffered until the run ends, so that a reply
+    # the reviewer rejects can be superseded instead of reaching the browser
     assert updates == [
         {"type": "reasoning", "content": "R1"},
         {"type": "reasoning", "content": "R2"},
-        {"type": "text", "content": "A1"},
-        {"type": "text", "content": "A2"},
+        {"type": "text", "content": "A1A2"},
         {"type": "done", "interrupt": None},
     ]
 

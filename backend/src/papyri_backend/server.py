@@ -68,14 +68,33 @@ class ModelUsage(TokenUsage):
     context_window: int | None = Field(default=None, gt=0)
 
 
+class VerificationReport(BaseModel):
+    """What the reviewer decided about this turn's answer.
+
+    ``verdict`` is "pass", "fail", "unverified" (the reviewer replied but the
+    reply could not be read) or "skipped" (the reviewer could not be reached).
+    It is never "pass" unless a verdict was actually understood, so a formatting
+    failure by the reviewer cannot read as an endorsement.
+    """
+
+    verdict: str
+    problems: list[str] = Field(default_factory=list)
+    retries: int = Field(default=0, ge=0)
+    evidence_count: int = Field(default=0, ge=0)
+    parsed: bool | None = None
+    model: str | None = None
+    error: str | None = None
+
+
 class ChatStreamEvent(BaseModel):
     """One content delta, usage checkpoint, or terminal control event."""
 
-    type: Literal["text", "reasoning", "replace", "usage", "done"]
+    type: Literal["text", "reasoning", "replace", "usage", "verification", "done"]
     content: str = ""
     interrupt: InterruptView | None = None
     usage: TokenUsage | None = None
     model_usage: ModelUsage | None = None
+    verification: VerificationReport | None = None
 
 
 def _cors_origins() -> list[str]:

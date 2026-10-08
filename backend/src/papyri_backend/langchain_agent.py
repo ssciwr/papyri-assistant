@@ -212,6 +212,22 @@ class LangChainAgent:
         interrupts = self.agent.get_state(self._config).interrupts
         return interrupts[0] if interrupts else None
 
+    def _review_report(self) -> dict[str, Any] | None:
+        """Return this turn's verification report, if a reviewer wrote one.
+
+        Read from the checkpointer rather than from the stream, for the same
+        reason ``_pending_interrupt`` is: the middleware writes it into graph
+        state, and state outlives the run that produced it.
+
+        Returns:
+            The report, or ``None`` when no reviewer is configured.
+        """
+        values = getattr(self.agent.get_state(self._config), "values", None)
+        if not isinstance(values, Mapping):
+            return None
+        report = values.get("review_report")
+        return dict(report) if isinstance(report, Mapping) else None
+
     @staticmethod
     def _interrupt_view(interrupt) -> dict[str, Any]:
         """Describe a pending interrupt for a client that has to answer it.
@@ -360,9 +376,13 @@ class LangChainAgent:
                     yield {"type": kind, "content": delta}
 
             tool_calls = message.tool_calls.get() or []
-            text_type = "reasoning" if tool_calls else "text"
-            for delta in pending_text:
-                yield {"type": text_type, "content": delta}
+            if tool_calls:
+                for delta in pending_text:
+                    yield {"type": "reasoning", "content": delta}
+            elif pending_text:
+                # One internal event carrying the whole answer, because whether
+                # it survives review is only known when the run ends
+                yield {"type": "answer", "content": "".join(pending_text)}
 
             for tool_call in tool_calls:
                 args = tool_call.get("args") or {}
@@ -545,7 +565,7 @@ class LangChainAgent:
         return self._stream_prepared_turn(payload)
 
     def _stream_prepared_turn(self, payload: Any) -> Iterator[dict[str, Any]]:
-        has_answer = False
+        answer = ""
         failed = False
         usage = None
         model_usage = None
@@ -555,12 +575,20 @@ class LangChainAgent:
                 if event["type"] == "usage":
                     usage = event["usage"]
                     model_usage = event["model_usage"]
-                if event["type"] == "text" and event["content"].strip():
-                    has_answer = True
+                if event["type"] == "answer":
+                    # Only the newest answer survives. A rejected one has been
+                    # superseded by the rewrite the reviewer asked for, and the
+                    # user should never have seen it.
+                    answer = event["content"]
+                    continue
                 yield event
         except Exception as exc:
             failed = True
+            answer = ""
             yield {"type": "replace", "content": f"The agent run failed: {exc}"}
+
+        if answer.strip():
+            yield {"type": "text", "content": answer}
 
         interrupt = self._pending_interrupt()
         interrupt_view = None
@@ -571,8 +599,12 @@ class LangChainAgent:
                     "type": "text",
                     "content": "Please decide how you want to proceed:\n",
                 }
-        elif not has_answer and not failed:
+        elif not answer.strip() and not failed:
             yield {"type": "text", "content": _EMPTY_ANSWER_MESSAGE}
+
+        report = self._review_report()
+        if report is not None:
+            yield {"type": "verification", "verification": report}
 
         done: dict[str, Any] = {"type": "done", "interrupt": interrupt_view}
         if usage is not None:
