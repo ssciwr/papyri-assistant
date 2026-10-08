@@ -1,5 +1,8 @@
 """Let the agent inspect and query the postgres database."""
 
+import json
+from typing import Any
+
 from langchain.tools import tool
 from sql_data_guard import verify_sql
 
@@ -13,12 +16,49 @@ _SCHEMA_QUERY = """
     ORDER BY table_name, ordinal_position
     """
 
+_CATALOG_SCHEMA_VERSION = 1
+_CATALOG_TABLE = "scrapyrus_semantic_catalog"
 
-def _rows(query: str) -> list[tuple] | str:
+_TABLE_SUMMARIES_QUERY = f"""
+    SELECT
+        catalog.table_name,
+        catalog.catalog_schema_version,
+        catalog.semantics
+    FROM public.{_CATALOG_TABLE} AS catalog
+    JOIN information_schema.tables AS live_table
+      ON live_table.table_schema = catalog.schema_name
+     AND live_table.table_name = catalog.table_name
+     AND live_table.table_type = 'BASE TABLE'
+    WHERE catalog.schema_name = 'public'
+      AND catalog.table_name <> '{_CATALOG_TABLE}'
+    ORDER BY catalog.table_name
+    """
+
+_TABLE_SEMANTICS_QUERY = f"""
+    SELECT
+        live_table.table_schema,
+        live_table.table_name,
+        catalog.catalog_schema_version,
+        catalog.producer_version,
+        catalog.updated_at,
+        catalog.semantics
+    FROM information_schema.tables AS live_table
+    LEFT JOIN public.{_CATALOG_TABLE} AS catalog
+      ON catalog.schema_name = live_table.table_schema
+     AND catalog.table_name = live_table.table_name
+    WHERE live_table.table_schema = 'public'
+      AND live_table.table_type = 'BASE TABLE'
+      AND live_table.table_name <> '{_CATALOG_TABLE}'
+      AND live_table.table_name = %s
+    """
+
+
+def _rows(query: str, params: tuple[Any, ...] | None = None) -> list[tuple] | str:
     """Run a read query and return its rows.
 
     Args:
         query: The sql to run.
+        params: Values for placeholders in the query.
 
     Returns:
         The rows, or the error text if the query failed. The error is returned
@@ -27,7 +67,7 @@ def _rows(query: str) -> list[tuple] | str:
     try:
         session_connection = connection()
         try:
-            return session_connection.execute(query).fetchall()
+            return session_connection.execute(query, params).fetchall()
         finally:
             # Nothing here writes, so every query is ended by rolling it back.
             # That is also what clears the aborted state a failed query leaves
@@ -40,36 +80,88 @@ def _rows(query: str) -> list[tuple] | str:
 
 @tool(parse_docstring=True)
 def list_sql_tables() -> str:
-    """List all tables in a pre-connected postgres database.
+    """List live domain tables and summarize what each table is useful for.
 
     Returns:
-        One table name per line.
+        One table name, description, and list of uses per entry.
     """
-    rows = _rows(
-        """
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_type = 'BASE TABLE'
-        ORDER BY table_name
-        """
-    )
+    rows = _rows(_TABLE_SUMMARIES_QUERY)
     if isinstance(rows, str):
         return rows
-    return "\n".join(table_name for (table_name,) in rows)
+    summaries = []
+    for table_name, catalog_schema_version, semantics in rows:
+        error = _semantic_catalog_error(table_name, catalog_schema_version, semantics)
+        if error is not None:
+            return error
+
+        summary = f"{table_name}: {semantics['description']}"
+        useful_for = semantics.get("useful_for") or []
+        if useful_for:
+            summary += f" Useful for: {'; '.join(useful_for)}."
+        summaries.append(summary)
+    return "\n".join(summaries)
+
+
+def _semantic_catalog_error(
+    table_name: str, catalog_schema_version: Any, semantics: Any
+) -> str | None:
+    """Return an error for a semantic catalog entry this consumer cannot use."""
+
+    if catalog_schema_version != _CATALOG_SCHEMA_VERSION:
+        return (
+            f"Error, table {table_name!r} uses unsupported semantic catalog schema "
+            f"version {catalog_schema_version!r}; expected {_CATALOG_SCHEMA_VERSION}"
+        )
+    if not isinstance(semantics, dict):
+        return f"Error, table {table_name!r} has invalid semantic catalog data"
+    if not isinstance(semantics.get("description"), str):
+        return f"Error, table {table_name!r} has no semantic description"
+    return None
 
 
 @tool(parse_docstring=True)
-def inspect_sql() -> str:
-    """Get all sql tables and their schema for inspection and orientation.
+def inspect_sql_table(table_name: str) -> str:
+    """Inspect one live table's complete semantics.
+
+    Args:
+        table_name: Unqualified name of a table in the public schema.
 
     Returns:
-        One ``table.column: datatype`` line per column, over every table.
+        The table's versioned semantic catalog entry.
     """
-    rows = _rows(_SCHEMA_QUERY)
+    table_name = table_name.strip()
+    if not table_name:
+        return "Error, table_name must not be blank"
+
+    rows = _rows(_TABLE_SEMANTICS_QUERY, (table_name,))
     if isinstance(rows, str):
         return rows
-    return "\n".join(f"{table}.{column}: {kind}" for table, column, kind in rows)
+    if not rows:
+        return f"Error, public table {table_name!r} does not exist"
+
+    (
+        schema_name,
+        live_table_name,
+        catalog_schema_version,
+        producer_version,
+        updated_at,
+        semantics,
+    ) = rows[0]
+    if catalog_schema_version is None:
+        return f"Error, public table {table_name!r} has no semantic catalog entry"
+    error = _semantic_catalog_error(live_table_name, catalog_schema_version, semantics)
+    if error is not None:
+        return error
+
+    result = {
+        "schema_name": schema_name,
+        "table_name": live_table_name,
+        "catalog_schema_version": catalog_schema_version,
+        "producer_version": producer_version,
+        "catalog_updated_at": updated_at,
+        "semantics": semantics,
+    }
+    return json.dumps(result, ensure_ascii=False, indent=2, default=str)
 
 
 def _guard_config() -> dict | str:

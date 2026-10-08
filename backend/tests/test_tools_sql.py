@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 import pytest
@@ -102,45 +103,155 @@ def test_query_sql_rejects_invalid_query_before_execution(
     assert fake_connection.rollback_calls == 0
 
 
-def test_list_sql_tables_formats_one_table_per_line(
+def test_rows_passes_query_parameters_and_rolls_back(
     monkeypatch: pytest.MonkeyPatch, fake_connection: Any
 ) -> None:
-    fake_connection.cursor.rows = [("orig_dates",), ("transcriptions",)]
+    fake_connection.cursor.rows = [("transcriptions",)]
+    use_connection(monkeypatch, fake_connection)
+
+    result = sql._rows("SELECT table_name FROM example WHERE table_name = %s", ("x",))
+
+    assert result == [("transcriptions",)]
+    assert fake_connection.params == [("x",)]
+    assert fake_connection.rollback_calls == 1
+
+
+def test_list_sql_tables_formats_semantic_summaries(
+    monkeypatch: pytest.MonkeyPatch, fake_connection: Any
+) -> None:
+    fake_connection.cursor.rows = [
+        (
+            "orig_dates",
+            1,
+            {
+                "description": "Dates assigned to papyri.",
+                "useful_for": ["date filtering", "chronological analysis"],
+            },
+        ),
+        (
+            "transcriptions",
+            1,
+            {
+                "description": "Source and searchable text.",
+                "useful_for": ["full-text search"],
+            },
+        ),
+    ]
     use_connection(monkeypatch, fake_connection)
 
     result = sql.list_sql_tables.invoke({})
 
-    assert result == "orig_dates\ntranscriptions"
+    assert result == (
+        "orig_dates: Dates assigned to papyri. Useful for: date filtering; "
+        "chronological analysis.\n"
+        "transcriptions: Source and searchable text. Useful for: full-text search."
+    )
     assert "information_schema.tables" in fake_connection.queries[0]
+    assert "scrapyrus_semantic_catalog" in fake_connection.queries[0]
+    assert (
+        "catalog.table_name <> 'scrapyrus_semantic_catalog'"
+        in (fake_connection.queries[0])
+    )
     assert fake_connection.rollback_calls == 1
 
 
-def test_inspect_sql_formats_table_columns(
-    monkeypatch: pytest.MonkeyPatch, fake_connection: Any
+def test_list_sql_tables_rejects_unsupported_catalog_version(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_connection.cursor.rows = [
-        ("transcriptions", "tm_id", "integer"),
-        ("transcriptions", "source_path", "text"),
-        ("orig_places", "place", "text"),
-    ]
-    use_connection(monkeypatch, fake_connection)
+    monkeypatch.setattr(
+        sql,
+        "_rows",
+        lambda query, params=None: [("transcriptions", 2, {"description": "Text"})],
+    )
 
-    result = sql.inspect_sql.invoke({})
+    result = sql.list_sql_tables.invoke({})
 
     assert result == (
-        "transcriptions.tm_id: integer\n"
-        "transcriptions.source_path: text\n"
-        "orig_places.place: text"
+        "Error, table 'transcriptions' uses unsupported semantic catalog schema "
+        "version 2; expected 1"
     )
-    assert "information_schema.columns" in fake_connection.queries[0]
-    assert fake_connection.rollback_calls == 1
+
+
+def test_inspect_sql_table_returns_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    semantics = {
+        "table_name": "transcriptions",
+        "description": "Source and searchable text.",
+        "row_grain": "One textual division.",
+        "useful_for": ["full-text search"],
+        "aliases": [],
+        "columns": {"tm_id": {"description": "Trismegistos document ID."}},
+        "relationships": [],
+        "caveats": ["A document can have multiple rows."],
+    }
+    calls = []
+
+    def rows(query: str, params: tuple[Any, ...] | None = None) -> list[tuple]:
+        calls.append((query, params))
+        assert query == sql._TABLE_SEMANTICS_QUERY
+        return [
+            (
+                "public",
+                "transcriptions",
+                1,
+                "2.3.4",
+                "2026-10-08 12:00:00+00:00",
+                semantics,
+            )
+        ]
+
+    monkeypatch.setattr(sql, "_rows", rows)
+
+    result = sql.inspect_sql_table.invoke({"table_name": " transcriptions "})
+
+    assert json.loads(result) == {
+        "schema_name": "public",
+        "table_name": "transcriptions",
+        "catalog_schema_version": 1,
+        "producer_version": "2.3.4",
+        "catalog_updated_at": "2026-10-08 12:00:00+00:00",
+        "semantics": semantics,
+    }
+    assert [params for _, params in calls] == [("transcriptions",)]
+
+
+@pytest.mark.parametrize(
+    ("catalog_rows", "expected"),
+    [
+        ([], "Error, public table 'missing' does not exist"),
+        (
+            [("public", "missing", None, None, None, None)],
+            "Error, public table 'missing' has no semantic catalog entry",
+        ),
+        (
+            [("public", "missing", 2, "1.0", "now", {"description": "x"})],
+            "Error, table 'missing' uses unsupported semantic catalog schema version "
+            "2; expected 1",
+        ),
+    ],
+)
+def test_inspect_sql_table_reports_unavailable_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+    catalog_rows: list[tuple],
+    expected: str,
+) -> None:
+    monkeypatch.setattr(sql, "_rows", lambda query, params=None: catalog_rows)
+
+    assert sql.inspect_sql_table.invoke({"table_name": "missing"}) == expected
+
+
+def test_inspect_sql_table_rejects_blank_name() -> None:
+    assert sql.inspect_sql_table.invoke({"table_name": "  "}) == (
+        "Error, table_name must not be blank"
+    )
 
 
 @pytest.mark.parametrize(
     ("tool", "arguments"),
     [
         (sql.list_sql_tables, {}),
-        (sql.inspect_sql, {}),
+        (sql.inspect_sql_table, {"table_name": "transcriptions"}),
     ],
 )
 def test_schema_tools_return_query_errors(
