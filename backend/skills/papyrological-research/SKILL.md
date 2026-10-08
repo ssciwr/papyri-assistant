@@ -11,11 +11,12 @@ allowed-tools: write_todos, read_file, write_file, edit_file, grep, task, list_s
 
 Research answers the user's question from the database and records everything the report needs. It starts from the interpretation file written with the question-interpretation skill, which defines the question, its axes and its sub-questions. The report-writing skill turns the research record into the final report, and it needs these items from the record:
 
-- the user's question and how it was interpreted;
+- the user's question and how it was interpreted, with its sub-questions;
 - the workflow and methods used, step by step, with the limits of each step;
-- the conclusions drawn, each set out as a claim;
+- the conclusions drawn, each set out as a claim with its certainty;
 - the evidence for and against each claim, with every source verified;
-- the alternatives that were considered, and why each was rejected or remains open.
+- the alternatives that were considered, and why each was rejected or remains open;
+- the gaps: what the database could not answer.
 
 Keep the record like a lab notebook: write each step into it as you take it, with its exact query and result, including the searches that found nothing. A step that is not in the record is lost for the report, and the reader of the report must be able to retrace every step and check every source.
 
@@ -81,14 +82,16 @@ Check every document a claim rests on against each point, and record what makes 
 - **Author and purpose**: who wrote the document, for whom, and why? An official report, a petition and a private letter each present facts in their own interest.
 - **Edition and research history**: how old is the edition? Have the reading, the date or the interpretation been revised since? Is the record a duplicate (`dupl` in the edition id) or a re-edition of a text already counted?
 
-Evidence comes from the database. Knowledge of the literature that you bring yourself is marked "not verified in the database" wherever it appears in the record.
+## Grounding
+
+Every claim is grounded in evidence from the database: documents, their texts and their metadata, each found by a recorded step. Knowledge you bring yourself, about the literature, the history or the meaning of a term, can suggest where to search; run the search, and the result is the evidence. Such knowledge never enters the record as a fact, a source or a figure. A sub-question that only sources outside the database could answer, such as a count in the scholarly literature, is recorded as unanswered under Gaps, with the source that would answer it.
 
 ## Inference along the axes
 
 Source criticism tests each document; these are the errors of reasoning from documents to claims. Check the reasoning for each primary and auxiliary axis of the interpretation:
 
 - **Temporal**: attributing a document to a period or event because its date fits; comparing raw counts from periods or places that are preserved unequally. Most papyri come from a few places, above all the Fayum and Oxyrhynchos, and from some periods more than others, so count the documents in the database for each period or place, and compare shares.
-- **Material**: counting records instead of papyri; taking a database count for the number preserved. The database holds the papyri.info data, so its count is a lower bound; where the literature gives a figure, report both and keep them apart.
+- **Material**: counting records instead of papyri; taking a database count for the number preserved. The database holds the papyri.info data, not every published papyrus, so its count is a lower bound.
 - **Relational**: taking two persons with the same name for one person, or one person under variant names for two; inferring a relationship from two names or topics occurring in the same document.
 - **Semantic**: carrying a meaning from one period or context into another; reading a formula as a description of what happened, when it may only be the conventional wording.
 
@@ -100,7 +103,6 @@ Where the interpretation has several sub-questions, the answer is more than thei
 
 - Build each claim on the main question from the claims that answer the sub-questions, and name them.
 - Where the sub-questions' answers pull in different directions, say so, and explain which weighs more and why.
-- Where the papyri add to or contradict the literary and archaeological sources, say so; that knowledge is marked as in "Source criticism".
 - Where a sub-question could not be answered, say how that limits the answer to the main question.
 
 ## Research record
@@ -151,7 +153,7 @@ Interpretation file: /scratchpad/interpretation-<topic>.md
 
 ## Sources
 | TM | Edition | Title | Date | Place | Link | Current location |
-<one row per cited document, verified with query_sql; literature cited separately>
+<one row per cited document, verified with query_sql>
 ```
 
 ## Acceptance criteria
@@ -166,7 +168,8 @@ Interpretation file: /scratchpad/interpretation-<topic>.md
 - At least one falsification search is recorded for each claim.
 - Every document a claim rests on has been through source criticism.
 - Alternatives and gaps are listed.
-- Every cited document has been verified with `query_sql`, and its source entry is complete. Knowledge from the literature is marked as not verified in the database.
+- Every cited document has been verified with `query_sql`, and its source entry is complete.
+- Every claim is grounded in database evidence. No fact, source or figure in the record comes from your own knowledge.
 
 ## Example
 

@@ -1,6 +1,6 @@
 # Example research record
 
-This record starts from the example interpretation file `example-decian-libelli.md` in the question-interpretation skill, and the good report in the report-writing skill was written from it. It meets every acceptance criterion. Read it for how a record is built: the open points of the interpretation established from evidence first, steps recorded with their sub-question and exact queries, every candidate decided, a search for counter-evidence that changes the answer, and claims that keep the database count apart from the literature's count.
+This record starts from the example interpretation file `example-decian-libelli.md` in the question-interpretation skill, and the good report in the report-writing skill was written from it. It meets every acceptance criterion. Read it for how a record is built: the open points of the interpretation established from evidence first, steps recorded with their sub-question and exact queries, every candidate decided, a search for counter-evidence that changes the answer, and a sub-question that the database cannot answer, recorded as a gap instead of being filled from memory.
 
 Its counts come from the database as it was on 8 October 2026. If a user asks this question, do the research again: the database may have changed.
 
@@ -145,11 +145,11 @@ Found by: F = formula (Step 3), K = keyword `libell%` (Step 2), C = counter-evid
 - Reasoning: in the excluded documents *libellus* means "petition", or names a liturgical book in the Latin codex; their dates and contents rule them out.
 - Certainty: high.
 
-### Claim 4 (SQ3): The database count is a lower bound for what is preserved.
-- Evidence for: the database holds the papyri.info data, not every published papyrus. Knipfing (1923) edited 41 libelli; later editions such as P.Oxy. XLI 2990 (1972), P.Oxy. LVIII 3929 (1991) and Tyche 30 no. 16 raised the number. Recent surveys (Schubert 2016) count about 46. (Literature figures: from knowledge of the literature, not verified in the database.)
-- Evidence against and uncertainties: the database's 46 distinct certificates are about equal to the literature's figure, so the database may hold almost every published certificate. That cannot be confirmed without comparing it with Schubert's list.
-- Reasoning: a count from a partial corpus cannot exceed the published total except through duplicates or misclassification, so the database count is a lower bound, and the two figures are close.
-- Certainty: medium.
+### Claim 4 (SQ2): The database count is a lower bound for what is preserved.
+- Evidence for: the database holds the papyri.info data, not every published papyrus. Within it, a certificate without a transcription, a matching keyword or a date in 249–251 is found by none of the routes (Steps 2–6).
+- Evidence against and uncertainties: none found. How far the count falls short of the published total cannot be measured in the database (SQ3, Gaps).
+- Reasoning: a count from a partial corpus, found by routes that each miss some documents, can only be lower than or equal to the published total.
+- Certainty: high.
 
 ### Claim 5 (SQ4): The libelli do not show whether their holders were Christians.
 - Evidence for: no certificate mentions Christians (Step 8). The certificates record a sacrifice to the gods, not the holder's religion before it. At least one holder was a priestess of Petesouchos (Chrest.Wilck. 125 [15151]), so the certificates were not issued only to Christians.
@@ -157,23 +157,22 @@ Found by: F = formula (Step 3), K = keyword `libell%` (Step 2), C = counter-evid
 - Reasoning: since the documents do not record the holder's religion, reading (b) of the question cannot be answered from them, and the count is given for reading (a).
 - Certainty: high.
 
-### Claim 6 (main question): About 46 Decian libelli are preserved, and the database holds nearly all of them.
-- Evidence for: Claim 2 (46 distinct certificates in the database) and Claim 4 (about 46 in the literature, of which the database count is a lower bound). Claim 1 gives the criteria, and Claim 5 shows that the count cannot be narrowed to certificates issued to Christians.
-- Evidence against and uncertainties: the two figures were not matched certificate by certificate, so equal totals could hide differences in both directions. The literature's figure is not verified in the database.
-- Reasoning: as the interpretation's synthesis plan requires, the two counts are kept apart. That they agree suggests that the database is nearly complete for this group, not that the two lists are identical.
-- Certainty: high for the database count; medium for the published total and for the completeness of the database.
+### Claim 6 (main question): At least 46 Decian libelli are preserved; the database holds 46 distinct certificates.
+- Evidence for: Claim 2 (47 records, 46 distinct certificates) and Claim 4 (the database count is a lower bound). Claim 1 gives the criteria, and Claim 5 shows that the count cannot be narrowed to certificates issued to Christians.
+- Evidence against and uncertainties: the published total (SQ3) could not be established from the database, so the answer gives a minimum, not a total.
+- Reasoning: the synthesis plan sets the database count beside the literature's count. With SQ3 unanswered, the database count answers the question as a lower bound.
+- Certainty: high for the database count and for it being a minimum.
 
 ## Alternatives
 - **29** (keyword count): rejected; 10 false positives and 28 misses (Claim 3).
 - **35** (keyword and formula combined, without Step 5): rejected; it misses 12 fragments tagged only in German.
-- **41** (Knipfing 1923): rejected as a current figure; it predates later editions.
 - **Certificates issued to Christians only**: cannot be counted (Claim 5).
 
 ## Draft answer
-The database holds 47 records of certificates of sacrifice from the Decian persecution, which are probably 46 distinct certificates, since two records share one text. All come from Egypt, 43 from the Arsinoite and 4 from the Oxyrhynchite nome, and their firm dates fall between 4 June and 14 July 250. The count is certain for 33 documents with formula and date; 14 are fragments classed by date and metadata. The literature counts about 46, so the database appears to hold nearly all published certificates; this was not checked against a published list. Whether any holder was a Christian cannot be read from the certificates.
+The database holds 47 records of certificates of sacrifice from the Decian persecution, which are probably 46 distinct certificates, since two records share one text. All come from Egypt, 43 from the Arsinoite and 4 from the Oxyrhynchite nome, and their firm dates fall between 4 June and 14 July 250. The count is certain for 33 documents with formula and date; 14 are fragments classed by date and metadata. It is a minimum: the published total could not be established from the database. Whether any holder was a Christian cannot be read from the certificates.
 
 ## Gaps
-- The database was not compared with Schubert's (2016) list; that would show whether any certificate is missing or misclassified.
+- SQ3 (the count in the scholarly literature) cannot be answered from the database. A published list of the Decian libelli would answer it, and comparing that list with the 47 records would show which certificates the database lacks.
 - Readings of the fragments were not checked in `xml_content` for supplied text.
 - Semantic search on `translations` was not used; only a few of the certificates have translations, so it could not have changed the count.
 
@@ -187,5 +186,3 @@ Link pattern: `https://papyri.info/editions/` + edition id with `;` replaced by 
 | 13941 | SB I 4440dupl | Opferbescheinigungen | 16 June 250 | Theadelphia (Arsinoites) | https://papyri.info/editions/sb/1/4440dupl | not recorded |
 | 30379 | P.Oxy. XLI 2990 | – | 3rd century | Oxyrhynchos | https://papyri.info/editions/p.oxy/41/2990 | not recorded |
 | 699682 | Tyche 30 no. 16 | Decian Libellus | ca. 4 June–14 July 250 | Theadelphia (Arsinoites) | https://papyri.info/editions/tyche/30/16 | Decorah |
-
-Literature (not verified in the database): J. R. Knipfing, "The Libelli of the Decian Persecution", *Harvard Theological Review* 16 (1923) 345–390. P. Schubert, "On the Form and Content of the Certificates of Pagan Sacrifice", *Journal of Roman Studies* 106 (2016) 172–198.
