@@ -44,6 +44,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_API_URL: ${LLM_API_URL:-}
       LLM_MODEL: ${LLM_MODEL:-}
+      LLM_PRESENCE_PENALTY: ${LLM_PRESENCE_PENALTY:-0.0}
       POSTGRES_URL: postgresql://papyri_query_reader:${PAPYRI_QUERY_PASSWORD:?PAPYRI_QUERY_PASSWORD must be set}@postgres:5432/scrapyrus
       HF_TOKEN: ${HF_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
