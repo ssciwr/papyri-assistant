@@ -13,7 +13,7 @@ The report is a structured presentation of the user's question and how it was in
 
 The reasoning is set out as **arguments**. An argument is a claim, the evidence for and against it, and the reasoning that leads from the evidence to the claim, set out so the reader can retrace every step and check every source.
 
-The report presents the research record; it adds nothing to it. Every fact, figure and source in the report comes from the record, which is grounded in the database. A point the record leaves open stays open in the report.
+The report presents the research record; it adds no new evidence or unsupported conclusions. Database findings, figures and sources come from the record's retrieved evidence. Background knowledge and interpretive hypotheses may be used as the record labels them, not promoted into verified facts. A point the record leaves open stays open in the report.
 
 ## Input and output
 
@@ -40,8 +40,8 @@ Output: the report at `/scratchpad/report-<topic>.md`, with the same `<topic>` a
 2. **Methods and sources**: Name the corpora and tools used. Describe the workflow step by step, and say where a step limits what the evidence can show.
 3. **Findings**: One argument per claim in the record, grouped by sub-question, with the claims on the main question last. For each one:
    - State the claim.
-   - Give the evidence for and the evidence against it, with references. Include all relevant evidence, including evidence that weakens the conclusion.
-   - Assess the evidence critically, as the record's source criticism does: date, place, reading, orthography, semantics, the author and purpose of the document, and the history of its edition and interpretation; and say why each source is or is not trustworthy.
+   - Give the supporting evidence and any relevant contrary evidence, with references. If none was found or a check was not performed, say so where it matters; do not manufacture opposition to straightforward observations.
+   - Assess the aspects of the sources that affect the claim, following the record's source criticism. Discuss date, place, reading, semantics, authorial purpose or edition history where relevant, rather than requiring every category for every source.
    - Give the reasoning from the evidence to the claim.
    - State how certain the claim is.
 4. **Alternatives**: Other answers that were considered, and why each was rejected or remains open. If the evidence does not decide between answers, say so and explain why.
@@ -52,13 +52,13 @@ Output: the report at `/scratchpad/report-<topic>.md`, with the same `<topic>` a
 
 - The user's question is answered directly.
 - Every claim in the record appears as an argument, and every argument comes from a claim in the record.
-- Every argument has evidence for and against, reasoning the reader can retrace, and a stated certainty.
+- Every argument has supporting evidence, any relevant contrary evidence or limitations, reasoning the reader can retrace, and a stated certainty.
 - Every sub-question is addressed: answered by an argument, or named as unanswered with the reason.
 - Uncertainties in the evidence are named wherever they weaken or strengthen an argument.
 - Where several answers remain possible, or no conclusion is drawn, the report says so and explains why.
 - Methods, workflow and tools are described step by step.
-- Every cited source has been verified to exist, and its reference entry is complete.
-- Every fact, figure and source in the report comes from the research record.
+- Every cited source has been verified to exist, and its reference entry includes available metadata, with unavailable fields marked as not recorded.
+- Every finding, figure, source and interpretive premise comes from the research record, preserving the distinction between retrieved evidence, background knowledge and hypotheses.
 
 ## Examples
 
