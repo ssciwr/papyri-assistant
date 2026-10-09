@@ -38,7 +38,7 @@ Known limitations:
 
 - Node.js 20.19+
 - Python 3.11+
-- PostgreSQL 16 with pgvector, or Docker Compose
+- PostgreSQL 18 with pgvector, or Docker Compose
 - An OpenAI-compatible chat-model API
 - Provider credentials or local model resources required by the specifications in PostgreSQL
 
@@ -115,15 +115,16 @@ three embedding tables, and their contract metadata before backend startup.
 
 ```sh
 cp .env.example .env
-docker compose up -d postgres-setup
+docker compose up -d postgres
 ```
 
 The bundled service starts an empty pgvector-enabled database and the read-only login only; database content must be supplied through infrastructure outside this repository. Development PostgreSQL is exposed only at `127.0.0.1:55432` and stored in `${POSTGRES_DATA_DIR:-./data/postgres}`. Production PostgreSQL is private to its Compose network.
 
-The one-shot `postgres-setup` service creates or refreshes
-`papyri_query_reader` after PostgreSQL becomes healthy and before the backend
-starts. It runs for both new and existing `${POSTGRES_DATA_DIR}` contents, so a
-changed `PAPYRI_QUERY_PASSWORD` is applied on the next Compose startup. The
+The one-shot `postgres-setup` service starts alongside PostgreSQL, waits for it
+to become ready, and then creates or refreshes `papyri_query_reader` before the
+backend starts. It runs for both new and existing `${POSTGRES_DATA_DIR}`
+contents, so a changed `PAPYRI_QUERY_PASSWORD` is applied on the next Compose
+startup, including when only `postgres` is selected. The
 login has `CONNECT`, public-schema `USAGE`, and `SELECT` on current and future
 tables owned by `scrapyrus`; it has no table-write or sequence privileges.
 
