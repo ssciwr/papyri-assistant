@@ -46,7 +46,7 @@ The paths are for the agents that pass the work on. The user works in a chat and
 
 ## Report criteria
 
-Check the report against every acceptance criterion of the report-writing skill ([../report-writing/SKILL.md](../report-writing/SKILL.md)), and against every criterion of the papyrological-research skill ([../papyrological-research/SKILL.md](../papyrological-research/SKILL.md)) whose result shows in a report: triangulation for every claim about a set of documents, a falsification search for every claim, and source criticism of every document a claim rests on.
+Check the report against the acceptance criteria of the report-writing skill ([../report-writing/SKILL.md](../report-writing/SKILL.md)) and the readiness criteria of the papyrological-research skill ([../papyrological-research/SKILL.md](../papyrological-research/SKILL.md)) that affect the report. Judge whether the checks are appropriate to the conclusions: coverage checks for counts or complete lists, plausible alternatives for load-bearing interpretations, and source criticism of the features each claim depends on. Do not require a fixed number of search routes, a separate falsification search for every claim, or irrelevant source checks. A missing check is an issue when it leaves a material risk to the answer unresolved, not merely because it was omitted.
 
 These criteria check that the report contains what it must. The checks below test whether what it contains holds.
 
@@ -62,7 +62,7 @@ For every argument, check:
 
 ## Research integrity
 
-- **Grounding**: every fact, figure and source comes from the database through a described step. Look for anything that reads like background knowledge (a definition, a date, historical context, a reference to the literature) with no step or document behind it.
+- **Grounding**: database findings, figures, quotations and document-specific assertions have retrieved evidence behind them. Background knowledge and interpretive hypotheses are clearly labeled and not presented as verified sources or database findings. If a conclusion depends on an unverified premise, check that it is appropriately qualified; labeling alone does not establish the premise.
 - **Whole evidence**: the evidence against a claim is given wherever the methods found any, and every document is presented with what it shows against the claim as well as for it.
 - **Counting**: counts are of distinct papyri, or say that they count records or texts.
 - **Faithful interpretation**: the interpretation is faithful to the user's question, and the answer answers the question as interpreted.
