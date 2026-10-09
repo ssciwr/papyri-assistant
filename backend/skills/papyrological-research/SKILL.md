@@ -1,115 +1,107 @@
 ---
 name: papyrological-research
-description: Research an interpreted papyrological question in the database and record the evidence the report is written from. Use once the question has been interpreted.
+description: Investigate an interpreted complex papyrological research question using the database, and record the evidence and reasoning for the final research report. Use once the research question has been interpreted.
 license: MIT
 metadata:
-  version: 0.2
+  version: 0.3
 allowed-tools: write_todos, read_file, write_file, edit_file, grep, task, list_sql_tables, inspect_sql, query_sql, similarity_search, mmr_search
 ---
 
 # Papyrological research
 
-Research answers the user's question from the database and records everything the report needs. It starts from the interpretation file written with the question-interpretation skill, which defines the question, its axes and its sub-questions. The report-writing skill turns the research record into the final report, and it needs these items from the record:
+Investigate the user's question, following the evidence rather than a fixed sequence of checks. Start from the question-interpretation file and leave a research record that the report-writing skill can turn into an answer: what you found, how you found it, why it supports your conclusions, and what remains uncertain.
 
-- the user's question and how it was interpreted, with its sub-questions;
-- the workflow and methods used, step by step, with the limits of each step;
-- the conclusions drawn, each set out as a claim with its certainty;
-- the evidence for and against each claim, with every source verified;
-- the alternatives that were considered, and why each was rejected or remains open;
-- the gaps: what the database could not answer.
-
-Keep the record like a lab notebook: write each step into it as you take it, with its exact query and result, including the searches that found nothing. A step that is not in the record is lost for the report, and the reader of the report must be able to retrace every step and check every source.
-
-## Sub-questions and claims
-
-A **sub-question** comes from the interpretation. It says what has to be found out, and it changes only by a recorded revision.
-
-A **claim** comes from the evidence. It is a statement that answers a sub-question, or the main question, in whole or in part, for example "The database holds 47 records of Decian certificates". Sub-questions stay questions; claims are the answers the evidence gives to them. One sub-question can lead to several claims.
-
-A claim starts as **provisional**, as soon as the evidence suggests an answer. It is then put through a falsification search and source criticism, and only then recorded as a claim with its evidence for and against, its reasoning and its certainty. A provisional claim that does not survive is recorded under Alternatives, with the reason it was rejected.
+The aim is a useful, defensible answer, not an exhaustive audit of the database. Scale the research to the question and the strength of the claims you intend to make. A representative example, a corpus count and a historical explanation need different kinds of support. Be thorough where a mistake would change the answer; keep routine checks and notes brief.
 
 ## Input and output
 
-Input: the interpretation file `/scratchpad/interpretation-<topic>.md`. If there is none, interpret the question with the question-interpretation skill first.
+Input: `/scratchpad/interpretation-<topic>.md`. If there is none, use the question-interpretation skill first.
 
-In a revision round, the input also includes the review file `/scratchpad/review-<topic>-<round>.md`. Resolve every issue that goes to research: run the searches it requires, record them as steps, and update the claims, alternatives and gaps in the existing record.
+In a revision round, also read `/scratchpad/review-<topic>-<round>.md`. Address research issues in the existing record: run useful follow-up searches, revise unsupported claims, or explain why a requested check is unavailable or would not resolve the issue. Do not repeat completed work merely to recreate the workflow.
 
-Output: a research record at `/scratchpad/research-<topic>.md`, with the same `<topic>` as the interpretation file, in the structure under "Research record" below. Once the record meets the acceptance criteria, write the report with the report-writing skill, or pass the record's path to the agent that writes it.
+Output: `/scratchpad/research-<topic>.md`, using the same `<topic>` as the interpretation file. Keep the sections under "Research record" so the report writer can find the findings and their support. When the record is ready, use the report-writing skill or pass its path to the report-writing agent.
 
-## Workflow
+## Research approach
 
-1. **Start the record.** Read the interpretation file. Copy its question, interpretation, axes and sub-questions into the record, and name the file's path.
-2. **Plan with `write_todos`,** sub-question by sub-question. The interpretation contains only what the user's question says, so the points it leaves open (terms, periods, categories) come first: the sub-questions that establish them go before the sub-questions that depend on them. For every sub-question about a set of documents, plan to triangulate with at least two independent search routes (see "Search routes").
-3. **Orient in the database.** Read [references/database.md](references/database.md) before your first query. Use `inspect_sql` for the schema, and query `scrapyrus_semantic_catalog` for the meaning and caveats of each column you will use.
+1. **Establish the question.** Read the interpretation and start the record with the question, scope and sub-questions. Identify which uncertainties actually affect the answer.
+2. **Make a working plan.** Use `write_todos` for substantial investigations. Start with dependencies that matter, but interleave sub-questions and revise the plan as discoveries suggest better routes. Do not turn every open term into a separate research project if it does not change the answer.
+3. **Orient in the database.** Read [references/database.md](references/database.md) before your first query. Inspect the relevant schema with `inspect_sql`; consult `scrapyrus_semantic_catalog` for unfamiliar fields or caveats that matter to your searches and conclusions.
+4. **Search and inspect.** Choose the route most likely to find useful evidence. Inspect promising documents and refine vocabulary, dates, places or classifications as needed. Add another route when it offers a meaningful coverage check or new evidence, not simply to meet a quota.
+5. **Develop and test answers.** Form provisional claims as the evidence develops. For conclusions the answer depends on, consider plausible alternatives and look for evidence that could change them. A targeted query, a closer reading, a comparison or an existing search result may provide the check; there is no requirement for a separate falsification search for every claim.
+6. **Assess the sources.** Check the features each claim depends on, using "Source criticism" below. Distinguish what a document records from what you infer, and keep material uncertainty beside the affected claim.
+7. **Synthesize and hand over.** Answer the main question from the findings, including tensions and limits. Verify cited documents, assemble their source entries, and check whether the record supports the proposed answer.
 
-Then work through steps 4–8 for each sub-question, in the planned order.
+These are recurring activities, not gates. You can search, interpret, check and synthesize in whatever order helps answer the question.
 
-4. **Search.** Run the planned routes, and record each step: the sub-question it serves, its purpose, the tool, the exact query or search text, the number of results, and its limitation.
-5. **Check every candidate.** Read its date, place, title and text, decide whether it belongs to the answer, and record the decision and the reason. Look into every document that only one route found, and every document a route should have found but did not.
-6. **Formulate provisional claims:** one sentence each for what the evidence so far suggests as the answer to the sub-question.
-7. **Try to falsify each provisional claim** with at least one search aimed at evidence against it: an exception, a document outside the expected date or place, a different meaning of the key word. Record what the search finds, including nothing. New candidates go through step 5, and the provisional claims are revised to match.
-8. **Apply source criticism** to every document a provisional claim rests on (see "Source criticism"), and check the reasoning against the inference errors of each involved axis (see "Inference along the axes"). Record each uncertainty next to the evidence it affects.
+### Choosing depth and stopping
 
-When every sub-question has been through steps 4–8:
+- **Examples or exploratory questions:** inspect a useful selection and state how it was chosen. Do not imply that it represents the whole corpus or exhausts the relevant documents.
+- **Counts or complete lists:** define the inclusion criteria and counting unit, check duplicates, and investigate likely omissions. Independent search routes are especially useful here; where feasible, cross-check coverage with another route and explain remaining blind spots.
+- **Broad historical or semantic claims:** look for comparable documents, exceptions and rival explanations. A few examples may establish that something occurred without establishing how common it was.
 
-9. **Record the claims.** Keep, revise or reject each provisional claim in the light of steps 7 and 8, and record the claims that answer each sub-question. Where there are several sub-questions, add the claims that answer the main question (see "Synthesis"). Then list the other answers that were considered, including the rejected provisional claims.
-10. **Verify the sources.** Cite only documents confirmed with `query_sql`, and collect for each its Trismegistos id, edition, title, date, place, link and current location (see "Building source entries" in [references/database.md](references/database.md)).
-11. **Check the record** against the acceptance criteria. Fill the gaps, then hand over to report writing.
+Stop when you can give a supported answer at the requested depth and further searches are unlikely to change it materially. Also stop or narrow the claim when the database cannot resolve a remaining uncertainty. Record what was not checked rather than continuing indefinitely or treating a partial answer as a failure. If the user gives a time or scope limit, prioritize the conclusions most important to them.
 
-## Revising the interpretation
+## Sub-questions, claims and revisions
 
-The interpretation is a starting point, not a fixed frame. The evidence may show that a term shifts its meaning, that the scope is too narrow or too wide, that a point needed for the answer was not foreseen, or that a sub-question is wrongly put. Then revise it: record the revision under "Revisions" in the record's interpretation, with the evidence that prompted it, and continue with the revised version. The interpretation file itself stays as it was, so that the original remains visible. If a revision changes what the user's question is taken to mean, tell the user.
+A **sub-question** identifies what needs to be found out. A **claim** is an answer suggested by the evidence; one sub-question may yield several claims, or remain open.
+
+Treat claims as provisional while researching. Keep, revise or reject them as you learn more. Record significant changes and plausible competing answers, but do not manufacture alternatives or counter-evidence for straightforward observations.
+
+The interpretation is a starting point, not a fixed frame. If the evidence exposes a shifting term, an unsuitable scope or a missing sub-question, record the revision and its reason in the research record. Leave the original interpretation file intact. Tell the user if the revision materially changes what their question is taken to mean.
 
 ## Search routes
 
-Each route sees a different part of the corpus. Triangulate: two routes that agree are strong evidence, and two that disagree show you where to look.
+Each route has different strengths and blind spots. Agreement helps, but shared metadata or editorial assumptions can make apparently different searches less independent than they seem.
 
-- **Metadata (`query_sql`)**: keywords, titles, dates, places, editions. Good for complete lists and counts within what the metadata records. Misses every document that was not tagged or described accordingly.
-- **Text (`query_sql` on `transcriptions`)**: words and formulae in the original language. Good for finding documents by their wording. Misses spelling variants, damaged passages and documents without a transcription.
-- **Semantic (`similarity_search`, `mmr_search`)**: closeness in meaning to a question. Good for discovering candidates and vocabulary you did not know to search for; the `keywords` corpus yields the exact keyword strings to query. It returns a fixed number of results, so it shows neither completeness nor counts: build exact SQL searches from what it finds, and count with those.
+- **Metadata (`query_sql`)**: keywords, titles, dates, places and editions. Useful for lists and counts within the recorded classifications; misses documents tagged or described differently.
+- **Text (`query_sql` on `transcriptions`)**: original-language words and formulae. Useful for wording and context; misses variants, damaged passages and documents without transcriptions.
+- **Semantic (`similarity_search`, `mmr_search`)**: useful for discovering candidates, parallels and vocabulary. The `keywords` corpus can reveal exact keyword strings for SQL searches. Fixed-size semantic results do not establish completeness or counts; use SQL for those.
 
-How to search each route well (the languages of the metadata, words split across lines, editorial supplements in the text, the coverage of the translations) is in [references/database.md](references/database.md).
+Use the guidance in [references/database.md](references/database.md) for multilingual metadata, split words, editorial supplements and translation coverage. When routes disagree, investigate discrepancies that could affect your answer. An exploratory search does not require resolving every unmatched hit.
 
-You may delegate independent sub-questions or search routes to subagents with `task`. Tell each subagent to return its exact queries, its result counts, the list of Trismegistos ids it found, and its limitations, so that its steps can go into the record.
+You may delegate independent sub-questions or routes with `task`. Ask for the findings, exact consequential queries, relevant result counts, Trismegistos ids and limitations so you can integrate their evidence without rerunning the work.
 
 ## Source criticism
 
-Check every document a claim rests on against each point, and record what makes it weaker or stronger:
+Criticism should follow the claim: examine the aspects that could change the conclusion, not every possible property of every document. A metadata inventory does not require the same close reading as an argument about a restored phrase.
 
-- **Date**: a precise date, a range, or a guess from the handwriting? Read `certainty` and `precision` in `orig_dates`; a document can have alternative dates.
-- **Place**: where the document was written, found, or sent? Read `place_type` in `orig_places`.
-- **Reading**: is the decisive word preserved, or supplied by the editor? The `text` column does not show the difference; `xml_content` does. Is the text a fragment?
-- **Orthography**: does the spelling vary in ways that a search may miss, or that change the reading?
-- **Semantics**: what does the word mean in this document's period and context? (*Libellus*, for example, means "petition" in late antiquity, not only "certificate".)
-- **Author and purpose**: who wrote the document, for whom, and why? An official report, a petition and a private letter each present facts in their own interest.
-- **Edition and research history**: how old is the edition? Have the reading, the date or the interpretation been revised since? Is the record a duplicate (`dupl` in the edition id) or a re-edition of a text already counted?
+- **Date:** precise, approximate or palaeographic? Read `date_text` alongside `certainty`, `precision` and any alternative dates in `orig_dates` when chronology matters.
+- **Place:** written, found, acquired, sent or received where? Check `place_type` and any uncertainty in the full place name when provenance matters.
+- **Reading:** preserved wording or editorial restoration? Check the decisive passage in `xml_content` when an argument depends on its wording; plain `text` hides supplements and uncertainty. Note fragmentary evidence.
+- **Orthography and semantics:** could spelling variants affect retrieval? Does the term have the same meaning in this period and context? Compare relevant parallels where useful.
+- **Author and purpose:** what can this genre and writer reasonably establish? A petition, official report or private letter has its own purposes; a statement in it is not automatically proof that the event occurred as described.
+- **Edition and research history:** check available revisions or duplicate editions where they affect a reading, attribution or count. Do not imply you have checked scholarship the database does not provide.
 
-## Grounding
+Use [../reasoning-about-uncertainty/SKILL.md](../reasoning-about-uncertainty/SKILL.md) when interpreting uncertain dates, places, readings or meanings. Explain uncertainties that affect the answer; if competing readings lead to the same conclusion, a brief note is enough.
 
-Every claim is grounded in evidence from the database: documents, their texts and their metadata, each found by a recorded step. Knowledge you bring yourself, about the literature, the history or the meaning of a term, can suggest where to search; run the search, and the result is the evidence. Such knowledge never enters the record as a fact, a source or a figure. A sub-question that only sources outside the database could answer, such as a count in the scholarly literature, is recorded as unanswered under Gaps, with the source that would answer it.
+## Grounding and interpretation
+
+Database findings, counts, quotations and document-specific assertions must be supported by retrieved evidence. Verify documents with `query_sql` before citing them; semantic hits and remembered examples are leads, not verified sources. Never invent a source, quotation, figure or bibliographic detail.
+
+Use your linguistic and historical knowledge to choose searches, understand documents and propose explanations. It may appear in the record as explicitly labeled background knowledge or an interpretive hypothesis, with its basis and uncertainty. Distinguish it from what the retrieved documents establish. Where a conclusion depends on such an assumption, seek supporting evidence or qualify the conclusion; labeling it is not a substitute for verification.
+
+If the question needs unavailable external scholarship, identify that limit and the kind of source needed. You can still offer a qualified database-based answer rather than withholding all interpretation.
 
 ## Inference along the axes
 
-Source criticism tests each document; these are the errors of reasoning from documents to claims. Check the reasoning for each primary and auxiliary axis of the interpretation:
+Use the interpretation's axes to notice relevant reasoning risks, not as a checklist for unrelated checks:
 
-- **Temporal**: attributing a document to a period or event because its date fits; comparing raw counts from periods or places that are preserved unequally. Most papyri come from a few places, above all the Fayum and Oxyrhynchos, and from some periods more than others, so count the documents in the database for each period or place, and compare shares.
-- **Material**: counting records instead of papyri; taking a database count for the number preserved. The database holds the papyri.info data, not every published papyrus, so its count is a lower bound.
-- **Relational**: taking two persons with the same name for one person, or one person under variant names for two; inferring a relationship from two names or topics occurring in the same document.
-- **Semantic**: carrying a meaning from one period or context into another; reading a formula as a description of what happened, when it may only be the conventional wording.
+- **Temporal:** a date compatible with an event does not itself link the document to that event. Uneven survival and database coverage limit comparisons of frequencies. If frequency matters, consider an appropriate corpus baseline; even normalized shares are not automatically historical rates.
+- **Material:** distinguish records, texts and physical objects. Define the unit in a count and account for duplicates. The database is not all published papyrology; avoid treating a database total as the total preserved. Uncertain classifications may also prevent a count from being a firm lower bound.
+- **Relational:** shared names do not establish identity, and co-occurrence does not establish a relationship. Look for contextual links.
+- **Semantic:** meanings change across periods and genres. Conventional formulae may show how something was represented rather than what actually happened.
 
-Papyri rarely narrate events or describe institutions. They mostly show them through their effects: dating formulas, requisitions, taxes, soldiers and settlers, prices, complaints. For each claim, say whether it rests on direct or indirect evidence, and attribute a document to an event or institution only when its text links it to one.
+Indirect evidence can support historical interpretations. Say what connects it to the proposed event or institution, why that explanation is plausible, and what alternatives remain. Reserve direct attribution for explicit links in the evidence.
 
 ## Synthesis
 
-Where the interpretation has several sub-questions, the answer is more than their sum. Follow the synthesis plan of the interpretation, and check whether the evidence supports it:
-
-- Build each claim on the main question from the claims that answer the sub-questions, and name them.
-- Where the sub-questions' answers pull in different directions, say so, and explain which weighs more and why.
-- Where a sub-question could not be answered, say how that limits the answer to the main question.
+Use the interpretation's synthesis plan as a guide. Explain how the sub-question findings combine into an answer, rather than merely listing them. Where they pull in different directions, weigh the evidence and say why. Where one remains unanswered, explain whether it limits the main conclusion or only a secondary detail.
 
 ## Research record
 
-Write the record in this structure. The report-writing skill relies on it.
+Keep a concise working notebook as you go, or after a coherent batch of searches. Preserve the queries and results needed to reproduce consequential findings, including negative searches that affect the answer. Routine lookups can be grouped; large results and candidate inventories can live in linked files. Do not copy every raw tool response into the record.
+
+Use this structure, scaling the detail to the investigation. "None found", "not checked" or "not applicable", with a brief explanation where needed, are valid entries; empty quotas are not reasons to invent work.
 
 ```markdown
 # Research record: <short title>
@@ -119,60 +111,62 @@ Write the record in this structure. The report-writing skill relies on it.
 
 ## Interpretation
 Interpretation file: /scratchpad/interpretation-<topic>.md
-<restatement, terms, scope, readings and axes, copied from the interpretation file>
+<question as interpreted, key terms, scope and axes>
 
 ### Sub-questions
 - SQ1 (<axis>, <role>): <sub-question>
 
 ### Revisions
-- <what was revised, the evidence that prompted it, and the effect on the research; "none" if none>
+- <significant revision, why it was made and its effect; or none>
 
 ## Steps
-### Step <n> (SQ<m>): <purpose>
+### Step <n> (SQ<m>, or several): <purpose>
 - Tool: <tool name>
-- Query: <exact SQL, or search text and corpus>
-- Result: <number of rows or documents; where the full result is stored>
-- Limitation: <what this step can miss or get wrong>
+- Query: <exact consequential SQL, or search text, corpus and relevant parameters; routine lookups may be grouped>
+- Result: <finding; count and location of full results where relevant>
+- Limitation: <material limitation, or reference to a shared limitation>
 
 ## Candidates
+<documents used and significant inclusion/exclusion decisions, or link to an inventory>
 | TM | Edition | Date | Place | Found by | Decision | Reason |
 
 ## Claims
-### Claim <n> (SQ<m>, or main question): <the claim in one sentence>
-- Evidence for: <documents by TM id, with what each shows; for a main-question claim, the claims answering the sub-questions that it builds on>
-- Evidence against and uncertainties: <documents, gaps and uncertainties>
-- Reasoning: <how the evidence leads to the claim>
-- Certainty: <high, medium or low, and why>
+### Claim <n> (SQ<m>, or main question): <claim>
+- Evidence for: <verified documents by TM id and what they show; or supporting sub-question claims>
+- Evidence against and uncertainties: <contrary evidence, plausible alternatives, assumptions and relevant limits; distinguish not found from not checked>
+- Reasoning: <how the evidence supports the claim; label background knowledge and interpretive hypotheses>
+- Certainty: <grade or plain-language assessment, with its basis>
 
 ## Alternatives
-- <other answer>: <why it was rejected, or why it remains open>
+- <plausible competing answer and why it was rejected or remains open; or none relevant>
 
 ## Draft answer
-<a short answer to the question, and how certain it is>
+<direct answer at the strength the evidence supports>
 
 ## Gaps
-- <what was not checked, and how it could be checked>
+- <unanswered point or material check not performed, its effect on the answer, and possible follow-up>
 
 ## Sources
 | TM | Edition | Title | Date | Place | Link | Current location |
-<one row per cited document, verified with query_sql>
+<one row per cited document, verified with query_sql; mark unavailable fields as not recorded>
 ```
 
-## Acceptance criteria
+For a count or complete list, retain the included ids and enough inclusion/exclusion decisions to audit the total. For an exploratory investigation, record the documents actually used and important exclusions; you need not adjudicate every search hit.
 
-- The interpretation is copied from the interpretation file, and every revision is recorded with its reason.
-- Every step is recorded with its sub-question, its exact query, its result count and its limitation.
-- Every claim about a set of documents rests on at least two independent search routes, or the record says why only one was possible.
-- Every candidate has a recorded decision and reason.
-- Every sub-question is answered by at least one claim, or the record says why it could not be answered.
-- Where there are several sub-questions, the main question is answered by claims that build on them.
-- Every claim has evidence for and against, reasoning, and a stated certainty.
-- At least one falsification search is recorded for each claim.
-- Every document a claim rests on has been through source criticism.
-- Alternatives and gaps are listed.
-- Every cited document has been verified with `query_sql`, and its source entry is complete.
-- Every claim is grounded in database evidence. No fact, source or figure in the record comes from your own knowledge.
+Build source entries using [references/database.md](references/database.md). Batch verification is fine, and previously retrieved SQL evidence can serve as verification without another identical query. Missing metadata is a limitation to report, not something to fill from memory or a reason to withhold an otherwise useful source.
+
+## Ready for report writing
+
+- The record answers the user's question as interpreted, or gives a useful partial answer with explicit limits.
+- Consequential searches and findings are traceable; counts have a defined unit, criteria and coverage limits.
+- The conclusions that matter have appropriate checks for alternatives, omissions or uncertain readings. The checks are chosen for their value, not their number.
+- Claims have evidence, reasoning and a justified certainty; contrary evidence and material uncertainty are not hidden.
+- The main answer follows from the findings. Unanswered sub-questions and significant revisions are visible.
+- Cited documents have SQL verification and source entries; unavailable metadata is marked.
+- Retrieved findings are distinguishable from background knowledge and hypotheses. Unverified external scholarship is not presented as checked evidence.
+
+These criteria concern the reliability and usefulness of the handover, not the number of steps or the length of the notebook.
 
 ## Example
 
-[references/example-research-record.md](references/example-research-record.md) is the research record for the question "How many Libelli from the persecution of Christians under Decius are preserved?". It starts from the example interpretation file in the question-interpretation skill, and the good report in the report-writing skill was written from it. Read it before your first research record.
+[references/example-research-record.md](references/example-research-record.md) illustrates a detailed investigation of "How many Libelli from the persecution of Christians under Decius are preserved?". Consult it for query and record examples, not as a minimum workload or a source of current counts. Its exhaustive candidate treatment suits a counting question; other questions may need a much shorter record.
