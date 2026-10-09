@@ -27,6 +27,7 @@ def llm_env(monkeypatch) -> None:
     monkeypatch.setenv("LLM_MODEL", "test-model")
     monkeypatch.setenv("LLM_API_URL", "http://localhost:9999/v1")
     monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.delenv("LLM_PRESENCE_PENALTY", raising=False)
     monkeypatch.setattr(
         "papyri_backend.chat_models.httpx.get",
         lambda *_args, **_kwargs: type("Response", (), {"status_code": 404})(),
@@ -44,6 +45,16 @@ def test_agent_config_loads(llm_env) -> None:
 
     assert config["system_prompt"].startswith("You are a concise")
     assert config["model"]["kwargs"]["model"] == "test-model"
+    assert config["model"]["kwargs"]["presence_penalty"] == "0.0"
+
+
+def test_presence_penalty_uses_langchain_parameter(llm_env, monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PRESENCE_PENALTY", "0.25")
+
+    config = utils.load_config(AGENT_CONFIG)
+    model = utils.build(config["model"])
+
+    assert model.presence_penalty == 0.25
 
 
 def test_agent_config_builds_an_agent(llm_env) -> None:

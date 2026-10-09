@@ -92,6 +92,7 @@ host-side value with its container-network URL.
 
 | Variable | Use/default |
 | --- | --- |
+| `LLM_PRESENCE_PENALTY` | Presence penalty sent with every chat-model request; defaults to `0.0`. |
 | `HF_TOKEN` | Optional/required for gated Hugging Face models; Compose preserves the HF cache. |
 | `OPENAI_API_KEY`, `VOYAGE_API_KEY`, `MISTRAL_API_KEY`, `VLLM_API_KEY` | Used only when a published corpus selects the corresponding provider. |
 | `EMBEDDING_ENDPOINT_<PROFILE>` | Resolves a database `endpoint_profile` without storing routing or secrets in the database; profile names are uppercased and punctuation becomes `_`. `.env.example` and Compose include the default `EMBEDDING_ENDPOINT_VLLM`; add an explicit Compose mapping when using another profile. |
