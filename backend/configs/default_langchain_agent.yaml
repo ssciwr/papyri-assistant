@@ -28,11 +28,16 @@ tools:
   - papyri_backend.tools.pgvec.similarity_search
   - papyri_backend.tools.pgvec.mmr_search
 
-# Deep Agents installs its own model-aware SummarizationMiddleware. Do not add
-# LangChain's middleware here: a same-named entry replaces the enhanced default.
+# Remark: A same-named entry replaces the enhanced default.
 middleware:
   - type: langchain.agents.middleware.TodoListMiddleware
     kwargs: {}
+
+# Skill directories, as paths in the agent's backend (see the "/skills/" route).
+# deepagents builds the SkillsMiddleware from these with the agent's own backend,
+# so the SKILL.md paths it lists are the ones read_file can open.
+skills:
+  - /skills/
 
 # "reject" carries an optional reason, which reaches the model as the refused
 # tool call's result. Saying what to do instead belongs there rather than in a
@@ -59,7 +64,7 @@ permissions:
   - type: deepagents.FilesystemPermission
     kwargs:
       operations: ["read"]
-      paths: ["/skills", "/skills/*.md"]
+      paths: ["/skills", "/skills/**"]
       mode: "allow"
   # don´t  allow an agent to rewrite skills directly from within the app
   - type: deepagents.FilesystemPermission
@@ -79,6 +84,13 @@ permissions:
     kwargs:
       operations: ["read", "write"]
       paths: ["/large_tool_results", "/large_tool_results/**"]
+      mode: "allow"
+  # scratchpad for working notes. It has no backend route, so it lives in graph
+  # state and is gone when the session is replaced
+  - type: deepagents.FilesystemPermission
+    kwargs:
+      operations: ["read", "write"]
+      paths: ["/scratchpad", "/scratchpad/**"]
       mode: "allow"
   # deny every filesystem read/write other than in explicitly configured routes
   - type: deepagents.FilesystemPermission
@@ -106,16 +118,16 @@ backend:
         kwargs:
           virtual_mode: True
           root_dir: ${MEMORY_DIR:-/app/memory}
-      "/skills/":
-        type: deepagents.backends.FilesystemBackend
-        kwargs:
-          virtual_mode: True
-          root_dir: ${SKILL_DIR:-/app/skills}
       "/logs/":
         type: deepagents.backends.FilesystemBackend
         kwargs:
           virtual_mode: True
           root_dir: ${LOGS_DIR:-/app/logs}
+      "/skills/":
+        type: deepagents.backends.FilesystemBackend
+        kwargs:
+          virtual_mode: True
+          root_dir: ${SKILL_DIR:-/app/skills}
 
 # Named subagents the "task" tool can delegate to. Each entry needs name,
 # description and system_prompt, and may add tools/model/interrupt_on.
@@ -130,8 +142,6 @@ backend:
 # store: BaseStore for cross-thread state, required by the "memory" kwarg below
 
 # memory: list of AGENTS.md-style files loaded as persistent context
-
-# skills: list of skill directories exposed to the agent
 
 # response_format: structured-output strategy for the final answer
 
