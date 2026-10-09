@@ -7,11 +7,7 @@ import {
 } from "@assistant-ui/react";
 
 import { requestDecision, type PendingInterrupt } from "./decisionGate";
-import {
-  formatTokenCheckpoint,
-  type ModelUsage,
-  type TokenUsage
-} from "./tokenUsage";
+import { type ModelUsage, type TokenUsage } from "./tokenUsage";
 
 export const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
@@ -157,11 +153,6 @@ const modelAdapter: ChatModelAdapter = {
           break;
         case "usage":
           usage = event.usage;
-          reasoning += formatTokenCheckpoint(
-            event.model_usage,
-            modelUsage.at(-1),
-            event.usage
-          );
           modelUsage.push(event.model_usage);
           break;
         case "verification":
@@ -173,11 +164,6 @@ const modelAdapter: ChatModelAdapter = {
           completed = true;
           usage = event.usage ?? usage;
           if (modelUsage.length === 0 && event.model_usage) {
-            reasoning += formatTokenCheckpoint(
-              event.model_usage,
-              undefined,
-              event.usage ?? event.model_usage
-            );
             modelUsage.push(event.model_usage);
           }
           if (event.interrupt?.actions.length) {

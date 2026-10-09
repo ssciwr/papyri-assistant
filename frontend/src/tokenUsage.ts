@@ -22,18 +22,6 @@ export function formatContextUsage(usage: ModelUsage) {
   return `${input} / ${usage.context_window.toLocaleString()} context tokens (${formattedPercent}%)`;
 }
 
-export function formatTokenCheckpoint(
-  usage: ModelUsage,
-  previous: ModelUsage | undefined,
-  cumulative: TokenUsage
-) {
-  const contextChange = previous
-    ? formatContextChange(usage.input_tokens, previous.input_tokens)
-    : "";
-
-  return `\n\n---\n\n**Token checkpoint · call ${usage.model_call}:** ${formatContextUsage(usage)}${contextChange} · ${usage.output_tokens.toLocaleString()} output this call · cumulative: ${formatInputOutputUsage(cumulative)} (${cumulative.total_tokens.toLocaleString()} total)\n\n`;
-}
-
 export function formatInputOutputUsage(usage: TokenUsage) {
   if (usage.cached_input_tokens === undefined) {
     return `${usage.input_tokens.toLocaleString()} in (cached included) / ${usage.output_tokens.toLocaleString()} out`;
@@ -41,10 +29,4 @@ export function formatInputOutputUsage(usage: TokenUsage) {
 
   const uncached = usage.input_tokens - usage.cached_input_tokens;
   return `${uncached.toLocaleString()} in (+ ${usage.cached_input_tokens.toLocaleString()} cached) / ${usage.output_tokens.toLocaleString()} out`;
-}
-
-function formatContextChange(current: number, previous: number) {
-  const difference = current - previous;
-  const sign = difference >= 0 ? "+" : "−";
-  return ` (${sign}${Math.abs(difference).toLocaleString()} since prior call)`;
 }
