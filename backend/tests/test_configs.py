@@ -19,6 +19,8 @@ from papyri_backend.utils import utils
 
 CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 AGENT_CONFIG = CONFIGS / "default_langchain_agent.yaml"
+OPENROUTER_CONFIG = CONFIGS / "openrouter_langchain_agent.yaml"
+CLINE_CONFIG = CONFIGS / "cline_langchain_agent.yaml"
 
 
 @pytest.fixture
@@ -46,10 +48,36 @@ def test_agent_config_loads(llm_env) -> None:
     assert config["model"]["kwargs"]["model"] == "test-model"
 
 
-def test_agent_config_builds_an_agent(llm_env) -> None:
+@pytest.mark.parametrize("config_path", [AGENT_CONFIG, OPENROUTER_CONFIG, CLINE_CONFIG])
+def test_agent_config_builds_an_agent(llm_env, config_path) -> None:
     # This is what the first request does, so a failure here is a 500 on the
     # first thing a user types.
-    agent = LangChainAgent.from_config(AGENT_CONFIG)
+    agent = LangChainAgent.from_config(config_path)
 
     assert agent.agent is not None
     assert agent.thread_id
+
+
+@pytest.mark.parametrize(
+    ("config_path", "base_url"),
+    [
+        (OPENROUTER_CONFIG, "https://openrouter.ai/api/v1/"),
+        (CLINE_CONFIG, "https://api.cline.bot/api/v1/"),
+    ],
+)
+def test_gateway_config_uses_standard_adapter_and_fixed_endpoint(
+    llm_env, config_path, base_url
+) -> None:
+    from langchain_openai import ChatOpenAI
+
+    config = utils.load_config(config_path)
+    model = utils.build(config["model"])
+
+    assert type(model) is ChatOpenAI
+    assert model.model_name == "test-model"
+    assert str(model.root_client.base_url) == base_url
+    assert model.openai_api_key.get_secret_value() == "test-key"
+    assert model.use_responses_api is False
+    assert model.stream_usage is True
+    assert "reasoning_effort" not in config["model"]["kwargs"]
+    assert "profile" not in config["model"]["kwargs"]

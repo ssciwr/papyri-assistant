@@ -1,23 +1,23 @@
-name: defaultAgent
+name: clineAgent
 
 model:
-  type: papyri_backend.chat_models.MaybeVLLMChatOpenAI
+  # Cline's gateway uses OpenAI-compatible Chat Completions.
+  # Endpoint: cline/cline sdk/packages/llms/src/providers/vendors/cline.ts
+  type: langchain_openai.ChatOpenAI
   kwargs:
+    # Choose a model identifier available to your Cline account.
+    # The selected model must support tool calling for this agent.
     model: ${LLM_MODEL}
-    base_url: ${LLM_API_URL}
-    api_key: ${LLM_API_KEY:-EMPTY}
-    temperature: 0.0
-    reasoning_effort: xhigh
-    presence_penalty: 0.5
-    max_retries: 5
-    timeout: 20
-    # Request the provider's token counts on the final streaming chunk.
-    # LangChain does not enable this automatically for custom base URLs.
+    base_url: https://api.cline.bot/api/v1
+    api_key: ${LLM_API_KEY}
+    max_retries: 3
+    timeout: 120
+    # Keep requests on the OpenAI-compatible Chat Completions API.
+    use_responses_api: false
     stream_usage: true
-    # DeepAgents uses this profile to trigger summarization at 85% and retain the newest 10%.
-    # must be adjusted to the LLM_MODEL's context length
-    profile:
-      max_input_tokens: 262144
+    # Add temperature, presence_penalty or reasoning_effort only if supported
+    # by the selected model. Set profile.max_input_tokens to its context limit
+    # if LangChain does not already supply an accurate model profile.
 
 # Caller-authored system instructions, placed before the deepagents base prompt.
 system_prompt: "You are a concise, helpful assistant, expert in papyrology and expert in Postgres sql and postgres-vector. You know how to use semantic and mmr search with queries and vectors, what the best search strategies are for a given problem, and how to efficiently work with large databases of digitalized, annotated ancient documents." # TODO
