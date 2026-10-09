@@ -52,12 +52,16 @@ services:
       POSTGRES_URL: postgresql://papyri_query_reader:${PAPYRI_QUERY_PASSWORD:-papyri-reader}@postgres:5432/scrapyrus
       HF_TOKEN: ${HF_TOKEN:-}
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
-      AGENT_CONFIG: /app/backend/configs/langchain_agent_with_review_loop.yaml
+      AGENT_CONFIG: /app/backend/configs/default_langchain_agent.yaml
       EMBEDDER_CONFIG: /app/backend/configs/voyage_ai_langchain_embedder.yaml
       RETRIEVER_CONFIG: /app/backend/configs/voyage_ai_langchain_retriever.yaml
       PYTHONPATH: /app/backend/src
     volumes:
       - ./backend/src:/app/backend/src
+      # Configs are read at startup, so mount them too: without this a config
+      # change needs an image rebuild to reach the container, and the old one
+      # keeps being used with no sign that anything was ignored.
+      - ./backend/configs:/app/backend/configs
       - huggingface-cache:/root/.cache/huggingface
     ports:
       - "127.0.0.1:3001:3001"
