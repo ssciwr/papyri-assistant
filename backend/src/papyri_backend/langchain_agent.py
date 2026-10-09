@@ -265,19 +265,19 @@ class LangChainAgent:
         model_call = 0
         for message in run.messages:
             model_call += 1
-            # Whether text introduces a tool call is only known when that call
-            # appears, so retain just this message's text until it completes.
-            pending_text: list[str] = []
+            # Tool calls are only finalized when the message completes. Stream
+            # text optimistically so a final answer reaches the client token by
+            # token, then move it to reasoning if this was a tool-call preamble.
+            streamed_text: list[str] = []
             for kind, delta in self._message_deltas(message):
                 if kind == "text":
-                    pending_text.append(delta)
-                else:
-                    yield {"type": kind, "content": delta}
+                    streamed_text.append(delta)
+                yield {"type": kind, "content": delta}
 
             tool_calls = message.tool_calls.get() or []
-            text_type = "reasoning" if tool_calls else "text"
-            for delta in pending_text:
-                yield {"type": text_type, "content": delta}
+            if tool_calls and streamed_text:
+                yield {"type": "reasoning", "content": "".join(streamed_text)}
+                yield {"type": "replace", "content": ""}
 
             for tool_call in tool_calls:
                 args = tool_call.get("args") or {}
@@ -452,6 +452,8 @@ class LangChainAgent:
                     model_usage = event["model_usage"]
                 if event["type"] == "text" and event["content"].strip():
                     has_answer = True
+                elif event["type"] == "replace":
+                    has_answer = bool(event["content"].strip())
                 yield event
         except Exception as exc:
             failed = True
