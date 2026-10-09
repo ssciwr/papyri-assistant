@@ -129,6 +129,25 @@ def test_turn_stream_yields_reasoning_and_text_deltas(user_message) -> None:
     assert graph.calls[0]["config"] == {"configurable": {"thread_id": "papyrus-thread"}}
 
 
+def test_final_answer_text_is_yielded_before_the_message_finishes(user_message) -> None:
+    class CompletionAwareToolCalls(FakeToolCalls):
+        checked = False
+
+        def get(self) -> list[dict[str, Any]]:
+            self.checked = True
+            return super().get()
+
+    tool_calls = CompletionAwareToolCalls()
+    stream = _agent(
+        FakeGraph([FakeStreamMessage(text="Answer", tool_calls=tool_calls)])
+    ).stream_single_turn(user_message("Question"))
+
+    assert next(stream) == {"type": "text", "content": "A"}
+    assert tool_calls.checked is False
+    assert _collect(stream)["text"] == "nswer"
+    assert tool_calls.checked is True
+
+
 def test_turn_stream_adds_finalized_tool_calls_to_reasoning(user_message) -> None:
     graph = FakeGraph(
         [
@@ -150,10 +169,7 @@ def test_turn_stream_adds_finalized_tool_calls_to_reasoning(user_message) -> Non
     assert "Let me search more specifically." in reasoning
     assert "Using tool: query_sql" in reasoning
     assert "tm_id: 123456" in reasoning
-    assert (
-        "".join(event["content"] for event in updates if event["type"] == "text")
-        == "Here is the final answer."
-    )
+    assert _collect(iter(updates))["text"] == "Here is the final answer."
 
 
 def test_turn_stream_accumulates_usage_across_model_calls(user_message) -> None:
@@ -330,8 +346,8 @@ def test_raw_message_events_preserve_reasoning_and_text_deltas(user_message) -> 
 
     assert updates == [
         {"type": "reasoning", "content": "R1"},
-        {"type": "reasoning", "content": "R2"},
         {"type": "text", "content": "A1"},
+        {"type": "reasoning", "content": "R2"},
         {"type": "text", "content": "A2"},
         {"type": "done", "interrupt": None},
     ]
