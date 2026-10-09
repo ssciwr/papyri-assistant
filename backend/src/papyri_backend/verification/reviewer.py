@@ -17,6 +17,7 @@ from typing import Any, NotRequired
 
 from langchain.agents.middleware import AgentMiddleware, AgentState, hook_config
 from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.constants import TAG_NOSTREAM
 
 from .evidence import collect_evidence
 from .request import build_review_request
@@ -31,7 +32,11 @@ retrieved and rejected it:
 {problems}
 
 Rewrite your answer to address every point. Retrieve more evidence first if you
-need it. Do not defend the previous answer."""
+need it. Do not defend the previous answer.
+
+Write the rewrite for the user, who has not seen the review: do not mention the
+reviewer, the points, or what you changed. Where a claim is not supported,
+remove it rather than restating it more narrowly."""
 
 
 class ReviewState(AgentState):
@@ -62,17 +67,10 @@ class ReviewerMiddleware(AgentMiddleware):
         """Build the gate.
 
         Args:
-            model: The chat model the reviewer runs on. Supplied automatically
-                from the agent config: ``utils.build`` passes the already-built
-                agent model to any middleware whose constructor names ``model``.
-                Name a different one in the config's kwargs to review on a
-                separate endpoint.
+            model: The chat model the reviewer runs on
             system_prompt: The reviewer's instructions, from the agent config.
-                Required rather than defaulted, so a missing key fails at
-                startup instead of silently reviewing with stale text.
             max_retries: How many times a rejected answer may be sent back. The
-                design specifies one. Zero records the verdict without acting on
-                it, which is a useful way to observe the gate before it bites.
+                design specifies one.
             max_evidence_chars: Longest tool result shown per evidence item.
         """
         super().__init__()
@@ -120,7 +118,13 @@ class ReviewerMiddleware(AgentMiddleware):
         )
         try:
             reply = self.model.invoke(
-                [SystemMessage(self.system_prompt), HumanMessage(request)]
+                [SystemMessage(self.system_prompt), HumanMessage(request)],
+                # Keep this call out of the graph's message stream. Without the
+                # tag the reviewer's own reply is streamed as a model message
+                # with no tool calls, which the caller reads as the turn's
+                # answer: the verdict JSON reaches the user and the real answer
+                # is lost. See langgraph/pregel/_messages.py.
+                config={"tags": [TAG_NOSTREAM]},
             )
         except Exception as exc:
             # The reviewer is an additional check, not a dependency. An
@@ -137,8 +141,7 @@ class ReviewerMiddleware(AgentMiddleware):
             }
 
         verdict = parse_verdict(_text_of(reply))
-        # An unparseable reply is neither a pass nor a fail. Calling it a pass
-        # would let a formatting slip read as an endorsement.
+        # An unparseable reply is neither a pass nor a fail.
         if not verdict.parsed:
             decision = "unverified"
         elif verdict.passed:

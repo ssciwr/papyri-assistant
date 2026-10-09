@@ -56,6 +56,12 @@ if __name__ == "__main__":
                 f"links={result['links']:<3} rewrites={result['retries']} "
                 f"{result['seconds']}s"
             )
+    except KeyboardInterrupt:
+        # A turn can fail to terminate: the agent has no request timeout, and a
+        # model that enters a repetition loop runs until the context is full.
+        # Interrupting then keeps the questions that did finish, rather than
+        # throwing away a whole run for one bad question.
+        print("\nInterrupted. Writing the questions that finished.")
     finally:
         session.clear()
 

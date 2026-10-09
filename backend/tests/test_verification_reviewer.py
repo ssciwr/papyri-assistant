@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langgraph.constants import TAG_NOSTREAM
 
 from papyri_backend.verification import ReviewerMiddleware
 from papyri_backend.verification.reviewer import CRITIQUE_NAME
@@ -27,9 +28,11 @@ class FakeReviewModel:
     def __init__(self, *replies: str) -> None:
         self.replies = list(replies)
         self.calls: list[list[Any]] = []
+        self.configs: list[Any] = []
 
-    def invoke(self, messages: list[Any]) -> Any:
+    def invoke(self, messages: list[Any], config: Any = None) -> Any:
         self.calls.append(messages)
+        self.configs.append(config)
         reply = self.replies.pop(0) if self.replies else '{"verdict": "pass"}'
         return SimpleNamespace(text=reply, content=reply)
 
@@ -37,7 +40,7 @@ class FakeReviewModel:
 class FailingModel:
     model_name = "unreachable"
 
-    def invoke(self, messages: list[Any]) -> Any:
+    def invoke(self, messages: list[Any], config: Any = None) -> Any:
         raise RuntimeError("review endpoint unreachable")
 
 
@@ -196,3 +199,19 @@ def test_the_hook_is_declared_able_to_jump_back_to_the_model() -> None:
 
     assert declared is not None, "after_model has lost its @hook_config decorator"
     assert "model" in declared
+
+
+def test_the_review_call_is_kept_out_of_the_message_stream() -> None:
+    """Without the tag the verdict JSON reaches the user instead of the answer.
+
+    The reviewer's own reply is a model message carrying no tool calls, which is
+    exactly the shape the caller reads as the turn's answer. Nothing else fails
+    when the tag is missing: the verdict is still correct and the report is
+    still written, so only the user sees the damage.
+    """
+    model = FakeReviewModel('{"verdict": "pass", "problems": []}')
+
+    build(model=model).after_model(turn("Two documents mention Sarapion."), None)
+
+    assert TAG_NOSTREAM in model.configs[0]["tags"]
+

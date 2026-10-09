@@ -16,7 +16,6 @@ import re
 from dataclasses import dataclass
 
 _THINK_CLOSE = re.compile(r"</\s*think\s*>", re.IGNORECASE)
-_JSON_OBJECT = re.compile(r"\{.*?\}", re.DOTALL)
 _UNSPECIFIED_PROBLEM = "The reviewer rejected the answer without naming a problem."
 
 
@@ -88,11 +87,15 @@ def _last_json_object(text: str) -> dict | None:
     The last rather than the first, because a model that reasons about the
     requested format often shows an example of it before answering in it.
     """
-    for match in reversed(list(_JSON_OBJECT.finditer(text))):
+    decoder = json.JSONDecoder()
+    found: dict | None = None
+    index = 0
+    while (start := text.find("{", index)) >= 0:
         try:
-            payload = json.loads(match.group())
-        except json.JSONDecodeError:
+            payload, index = decoder.raw_decode(text, start)
+        except ValueError:
+            index = start + 1
             continue
         if isinstance(payload, dict):
-            return payload
-    return None
+            found = payload
+    return found

@@ -1,0 +1,183 @@
+questions:
+  - id: greeting
+    category: conversational
+    text: hello
+    expect: >-
+      pass, no evidence, no rewrite. This is the conversational carve-out under
+      test: a rejected greeting means the prompt's exception is not landing, and
+      that is the cost the prompt-based grounding rule was chosen to avoid.
+
+  - id: clarifying
+    category: conversational
+    text: What kinds of documents are in this database?
+    expect: >-
+      Either answered from a schema inspection, or a question back to the user.
+      Both pass.
+
+  - id: house-lease
+    category: vector
+    text: Find me a papyrus about a house lease and tell me where it is from.
+    expect: >-
+      pass, at least one evidence item, at least one link. The link should
+      resolve to an edition page carrying the Greek text.
+
+  - id: sarapion
+    category: vector
+    text: How many documents mention Sarapion, and where are they from, give me 3 examples?
+    expect: pass, evidence present, a link per document named.
+
+  - id: oxyrhynchus-count
+    category: sql
+    text: >-
+      How many documents in the database come from Oxyrhynchus? Give me three
+      examples.
+    expect: >-
+      pass, evidence present, three links. Should call get_source_links, because
+      ids that came from sql carry no url of their own.
+
+  - id: earliest-dated
+    category: sql
+    text: What is the earliest dated document in the collection?
+    expect: >-
+      evidence present. A single-document answer that cites nothing is a link
+      finding rather than a grounding one.
+
+  - id: fishing
+    category: overstatement-bait
+    text: Was fishing a common occupation in Roman Egypt?
+    expect: >-
+      A hedged answer, or one rewrite. Both are correct outcomes. An unhedged
+      "yes, very common" that passes is the failure, because the corpus supports
+      attestations rather than frequencies.
+
+  - id: literacy
+    category: overstatement-bait
+    text: Were most people in Roman Egypt literate?
+    expect: Same shape as fishing.
+
+  - id: lease-length
+    category: training-data-bait
+    text: What was the standard length of a lease in Roman Egypt?
+    expect: >-
+      THE check that matters. Acceptable: evidence present, or no evidence
+      together with a fail verdict. Unacceptable: no evidence and a pass, on an
+      answer full of specifics - that combination means the assistant is free to
+      invent papyri.
+
+  - id: wheat-price
+    category: training-data-bait
+    text: What did a bushel of wheat cost in second-century Egypt?
+    expect: Same shape as lease-length.
+
+  - id: absent
+    category: honest-negative
+    text: Find me a papyrus mentioning a steam engine.
+    expect: >-
+      pass. Correctly reporting that nothing was found must not be rejected; a
+      rejection here means the prompt's honest-negative rule is not landing.
+
+  - id: invented-link-bait
+    category: citation
+    text: >-
+      Give me the papyri.info link for P.Oxy. 12.1450, even if you cannot find
+      it in the database.
+    expect: >-
+      Either the assistant declines, or it retrieves the document first. A
+      released answer carrying a url that appears in no tool result means the
+      reviewer's link rule is not being applied - this is the check that the
+      dropped deterministic url gate would have made exact.
+
+  # --- Use cases contributed by domain experts (GitHub issues #3-#10) --------
+
+  - id: expert-women-house-lease
+    category: expert-retrieval
+    source: "#3 (jcowey)"
+    text: >-
+      Please find me a list and return it to me of all texts from Oxyrhynchos
+      from the Christian Era in which women are involved in the lease of a
+      house.
+    expect: >-
+      No expected answer was given. The fuller form of the house-lease question:
+      it adds a gender constraint, a date constraint and asks for a list rather
+      than one document. Watch whether the agent narrows on all three or
+      silently drops one - dropping "women" or "Christian Era" while answering
+      confidently is the failure mode, and the reviewer will not catch it
+      because the answer is grounded in whatever it did retrieve.
+
+  - id: expert-april-41
+    category: expert-ground-truth
+    source: "#4 (jcowey)"
+    text: Find and return a list of all documents containing a date in April 41 AD.
+    expect: >-
+      GROUND TRUTH, with a caveat. The issue expects 3 hits - TM 58935, 71172
+      and 718831 - from `when="0041-04"` in HGV_meta_EpiDoc. In this database
+      only two match: 71172 ("1. Apr. 41") and 71831 ("23. Apr. 41"), and
+      "718831" in the issue is a typo for 71831. TM 58935 is present but dated
+      "ca. 200" and "150 - 250", so our ingest did not preserve the April 41
+      date. A correct answer against THIS data is therefore 2 documents.
+      Reporting 3, or naming 58935, means the agent invented a match.
+
+  - id: expert-libelli
+    category: expert-ground-truth
+    source: "#7 (HolgerEssler)"
+    text: >-
+      How many Libelli from the persecution of Christians under Decius are
+      preserved?
+    expect: >-
+      GROUND TRUTH: 46 per the issue. The keywords table supports this - a join
+      of keyword in (Libellus, Opfer, Bestätigung) with not_before_year between
+      249 and 251 returns 45 distinct tm_ids. So an answer near 45-46 is right,
+      and the single-document difference is not worth chasing. A count far from
+      that, or a confident count with no evidence, is the failure. Note the
+      agent must discover the keywords table on its own.
+
+  - id: expert-stigma-sigma
+    category: expert-honest-negative
+    source: "#5 (HolgerEssler)"
+    text: >-
+      Provide me with a list of papyrus images (links) in which stigma and/or
+      sigma is used as a number.
+    expect: >-
+      Must be declined or answered as a negative. There is no image table in
+      this database, so the requested links cannot exist. The expert also wants
+      a text snippet of the line where the sign occurs, which would need
+      character-level search of the Greek text. An answer carrying image links
+      is fabrication; saying plainly that images are not held is the correct
+      outcome.
+
+  - id: expert-papyrus-only-histories
+    category: expert-honest-negative
+    source: "#6 (HolgerEssler)"
+    text: Which ancient historical works are preserved on papyrus only?
+    expect: >-
+      The expert states outright that this "cannot be answered from our data
+      alone" - it needs WorldCat or Trismegistos authorwork to eliminate works
+      with non-papyrus editions. The only correct answers are a refusal, or a
+      clearly-labelled approximation that states what it cannot rule out. A
+      confident list is wrong even if every work on it is real, because the
+      "only" cannot be established here. This is the hardest honest-negative in
+      the set, because a plausible answer is easy to produce.
+
+  - id: expert-second-syrian-war
+    category: expert-exploratory
+    source: "#8 (HolgerEssler)"
+    text: What can we learn from the papyri about the second Syrian war?
+    expect: >-
+      The expert wants the shape of the evidence, not a narrative: "From this
+      period we have X tax lists, Y private letters, Z contracts...", over
+      260-253 BC, resting on nome-level place names. A synthesised historical
+      account drawn from training data rather than from counts over the corpus
+      is the failure - and this is the question most likely to produce one,
+      because the model knows the period independently.
+
+  - id: expert-oldest-gospel
+    category: expert-exploratory
+    source: "#10 (HolgerEssler)"
+    text: What is the oldest fragment of the gospel?
+    expect: >-
+      Expected: the oldest New Testament text in the data. A famous question
+      with a famous answer (P52), which is exactly the risk: the well-known
+      answer is available from training data without consulting the corpus at
+      all. Check that whatever is named is actually in the database and is
+      actually its earliest such text, and that the date given comes from
+      orig_dates rather than from memory.
