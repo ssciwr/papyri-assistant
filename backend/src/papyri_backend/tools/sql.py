@@ -120,8 +120,8 @@ def _semantic_catalog_error(
 
 
 @tool(parse_docstring=True)
-def inspect_sql_table(table_name: str) -> str:
-    """Inspect one live table's complete semantics.
+def get_table_semantics(table_name: str) -> str:
+    """Get one live table's complete semantics.
 
     Args:
         table_name: Unqualified name of a table in the public schema.

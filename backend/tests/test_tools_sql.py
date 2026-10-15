@@ -172,7 +172,7 @@ def test_list_sql_tables_rejects_unsupported_catalog_version(
     )
 
 
-def test_inspect_sql_table_returns_semantics(
+def test_get_table_semantics_returns_semantics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     semantics = {
@@ -203,7 +203,7 @@ def test_inspect_sql_table_returns_semantics(
 
     monkeypatch.setattr(sql, "_rows", rows)
 
-    result = sql.inspect_sql_table.invoke({"table_name": " transcriptions "})
+    result = sql.get_table_semantics.invoke({"table_name": " transcriptions "})
 
     assert json.loads(result) == {
         "schema_name": "public",
@@ -231,18 +231,18 @@ def test_inspect_sql_table_returns_semantics(
         ),
     ],
 )
-def test_inspect_sql_table_reports_unavailable_semantics(
+def test_get_table_semantics_reports_unavailable_semantics(
     monkeypatch: pytest.MonkeyPatch,
     catalog_rows: list[tuple],
     expected: str,
 ) -> None:
     monkeypatch.setattr(sql, "_rows", lambda query, params=None: catalog_rows)
 
-    assert sql.inspect_sql_table.invoke({"table_name": "missing"}) == expected
+    assert sql.get_table_semantics.invoke({"table_name": "missing"}) == expected
 
 
-def test_inspect_sql_table_rejects_blank_name() -> None:
-    assert sql.inspect_sql_table.invoke({"table_name": "  "}) == (
+def test_get_table_semantics_rejects_blank_name() -> None:
+    assert sql.get_table_semantics.invoke({"table_name": "  "}) == (
         "Error, table_name must not be blank"
     )
 
@@ -251,7 +251,7 @@ def test_inspect_sql_table_rejects_blank_name() -> None:
     ("tool", "arguments"),
     [
         (sql.list_sql_tables, {}),
-        (sql.inspect_sql_table, {"table_name": "transcriptions"}),
+        (sql.get_table_semantics, {"table_name": "transcriptions"}),
     ],
 )
 def test_schema_tools_return_query_errors(
