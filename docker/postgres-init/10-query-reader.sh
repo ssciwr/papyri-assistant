@@ -3,6 +3,14 @@ set -eu
 
 : "${PAPYRI_QUERY_PASSWORD:?PAPYRI_QUERY_PASSWORD must be set}"
 
+until pg_isready \
+    --host "$PGHOST" \
+    --username "$POSTGRES_USER" \
+    --dbname "$POSTGRES_DB"
+do
+    sleep 1
+done
+
 psql --set ON_ERROR_STOP=1 \
     --username "$POSTGRES_USER" \
     --dbname "$POSTGRES_DB" \

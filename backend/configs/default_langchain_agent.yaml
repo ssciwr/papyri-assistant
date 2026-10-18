@@ -8,9 +8,9 @@ model:
     api_key: ${LLM_API_KEY:-EMPTY}
     temperature: 0.0
     reasoning_effort: xhigh
-    presence_penalty: 0.5
     max_retries: 5
     timeout: 20
+    presence_penalty: ${LLM_PRESENCE_PENALTY:-0.0}
     # Request the provider's token counts on the final streaming chunk.
     # LangChain does not enable this automatically for custom base URLs.
     stream_usage: true
@@ -25,7 +25,7 @@ system_prompt: "You are a concise, helpful assistant, expert in papyrology and e
 tools:
   # sql query tools
   - papyri_backend.tools.sql.list_sql_tables
-  - papyri_backend.tools.sql.inspect_sql
+  - papyri_backend.tools.sql.get_table_semantics
   - papyri_backend.tools.sql.query_sql
 
   # semantic search tools
