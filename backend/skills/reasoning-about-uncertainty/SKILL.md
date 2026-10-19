@@ -16,7 +16,7 @@ Prefer plain-language assessments with reasons to numerical confidence without a
 ## Working approach
 
 1. **Identify the conclusion at stake.** Which date, place, reading, meaning or attribution does it depend on?
-2. **Inspect the relevant evidence.** Use the supplied records and the markers below. Consult fuller fields or passages where the derived value hides a distinction that matters; there is no need to inspect every field in every document.
+2. **Inspect the relevant evidence.** Use the supplied records, read as the database-content-interpretation skill describes. Consult fuller fields or passages where the derived value hides a distinction that matters; there is no need to inspect every field in every document.
 3. **Consider plausible alternatives.** Ask whether another reading would change the answer. Develop competing branches only when they are credible and consequential.
 4. **State the effect.** Give the best-supported interpretation and its basis, or explain why the evidence does not decide. Suggest a further check only when it could materially improve the answer.
 
@@ -72,39 +72,4 @@ Recurring administrative formulae can strongly constrain restorations and meanin
 
 ## Reading the record
 
-Use these fields when the distinction they preserve matters to the claim:
-
-- **`xml_content` for decisive wording.** `text` prints restorations as if preserved, drops gaps and doubt marks, and keeps only the accepted reading of a corrected passage. Inspect the relevant XML passage when an argument turns on a reading; you need not audit the entire text.
-- **`date_text` for chronological qualifications.** Year bounds may turn `Ende I` into 76–100 and leave `not_after_year` empty for `nach 161`. Qualifiers such as `ca.`, `(?)`, `Anfang`, `Mitte`, `Ende`, `nach` and `vor` can preserve distinctions the numeric bounds omit. A missing bound does not establish a bounded interval.
-- **`full_place_name` for provenance qualifications.** A doubtful attribution may be marked by `(?)`, as in `Pathyris (?)`. Read it alongside `place_type` rather than treating a place name alone as proof of where the document was written.
-
-How tight a date is depends on how it was obtained, which `date_text` and the edition usually show: a date written out in full; a regnal year without the ruler (several candidate years); an indiction year alone (the cycle repeats every 15 years); a known official's term of office; the archive the document belongs to; the handwriting (often a century or more).
-
-### Markers in `xml_content`
-
-These identify editorial interventions or textual conditions, not automatic confidence grades. An expansion or restoration may be well constrained; the absence of a doubt marker is not a guarantee of certainty.
-
-| Marker | Meaning |
-|---|---|
-| `<unclear>` | Letters partly visible; the reading is the editor's. |
-| `<gap reason="lost">`, `<gap reason="illegible">` | Text lost or unreadable. `quantity` gives its length in characters or lines; `extent="unknown"` means the length is unknown. |
-| `<supplied reason="lost">` | The editor's restoration of lost text. `cert="low"` marks a doubtful one. |
-| `<supplied evidence="parallel">` | Restored from a parallel text. |
-| `<supplied evidence="apograph">` | Taken from an earlier copy or drawing, not from the papyrus as it is now. |
-| `<supplied reason="omitted">` | Letters the scribe left out, added by the editor. |
-| `<expan>`, `<ex>` | An abbreviation expanded by the editor; the `<ex>` part is the editor's. `<ex cert="low">` marks a doubtful expansion. |
-| `<choice><reg>…</reg><orig>…</orig></choice>` | The scribe's spelling (`orig`) and the editor's standard form (`reg`). |
-| `<certainty match=".." locus="value"/>` | The editor's "(?)": the enclosing reading is doubtful. |
-| `<app type="editorial">` | A later correction. `<lem resp="BL …">` is the current reading, from the *Berichtigungsliste*; `<rdg>` is the reading it replaced. |
-| `<app type="alternative">` | The editor offers more than one possible reading. |
-| `<del>`, `<add>`, `<subst>` | The scribe's own corrections. |
-
-### Markers in the metadata
-
-| Marker | Meaning |
-|---|---|
-| `orig_dates.certainty = 'low'` | The date is doubtful; mostly coincides with `(?)` in `date_text`. |
-| `orig_dates.precision` | `low`: dated to a century or part of one (`III`, `Anfang IV`). `medium`: an approximate year (`ca. 297`). This describes granularity, not by itself the reliability of the date. |
-| `orig_dates.alternative` | One of several dates proposed for the document. |
-| `orig_places.place_type` | `found` is the findspot and `acquired` where it was bought; neither is necessarily where the text was written. `composed` is. |
-| `keywords.uncertain` | The modern classification of the document is itself doubtful. |
+To read uncertainty markers and notation in retrieved data, such as editorial markup in the XML, qualifiers in date texts, date certainty and precision, and place relations, use the database-content-interpretation skill ([../database-content-interpretation/SKILL.md](../database-content-interpretation/SKILL.md)).
