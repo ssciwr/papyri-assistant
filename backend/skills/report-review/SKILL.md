@@ -4,7 +4,7 @@ description: Review a written research report and decide whether it goes to the 
 license: MIT
 metadata:
   version: 0.1
-allowed-tools: write_todos, read_file, write_file, grep, list_sql_tables, inspect_sql, query_sql, similarity_search, mmr_search
+allowed-tools: write_todos, read_file, write_file, grep, list_sql_tables, get_table_semantics, query_sql, similarity_search, mmr_search
 ---
 
 # Report review
