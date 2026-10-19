@@ -4,7 +4,7 @@ description: Investigate an interpreted complex papyrological research question 
 license: MIT
 metadata:
   version: 0.3
-allowed-tools: write_todos, read_file, write_file, edit_file, grep, task, list_sql_tables, inspect_sql, query_sql, similarity_search, mmr_search
+allowed-tools: write_todos, read_file, write_file, edit_file, grep, task, list_sql_tables, get_table_semantics, query_sql, similarity_search, mmr_search
 ---
 
 # Papyrological research
@@ -25,7 +25,7 @@ Output: `/scratchpad/research-<topic>.md`, using the same `<topic>` as the inter
 
 1. **Establish the question.** Read the interpretation and start the record with the question, scope and sub-questions. Identify which uncertainties actually affect the answer.
 2. **Make a working plan.** Use `write_todos` for substantial investigations. Start with dependencies that matter, but interleave sub-questions and revise the plan as discoveries suggest better routes. Do not turn every open term into a separate research project if it does not change the answer.
-3. **Orient in the database.** Read [references/database.md](references/database.md) before your first query. Inspect the relevant schema with `inspect_sql`; consult `scrapyrus_semantic_catalog` for unfamiliar fields or caveats that matter to your searches and conclusions.
+3. **Orient in the database.** Use the search-database skill ([../search-database/SKILL.md](../search-database/SKILL.md)) for every database search. It explains how to read the semantic catalog, choose search routes and avoid counting and reading pitfalls.
 4. **Search and inspect.** Choose the route most likely to find useful evidence. Inspect promising documents and refine vocabulary, dates, places or classifications as needed. Add another route when it offers a meaningful coverage check or new evidence, not simply to meet a quota.
 5. **Develop and test answers.** Form provisional claims as the evidence develops. For conclusions the answer depends on, consider plausible alternatives and look for evidence that could change them. A targeted query, a closer reading, a comparison or an existing search result may provide the check; there is no requirement for a separate falsification search for every claim.
 6. **Assess the sources.** Check the features each claim depends on, using "Source criticism" below. Distinguish what a document records from what you infer, and keep material uncertainty beside the affected claim.
@@ -57,7 +57,7 @@ Each route has different strengths and blind spots. Agreement helps, but shared 
 - **Text (`query_sql` on `transcriptions`)**: original-language words and formulae. Useful for wording and context; misses variants, damaged passages and documents without transcriptions.
 - **Semantic (`similarity_search`, `mmr_search`)**: useful for discovering candidates, parallels and vocabulary. The `keywords` corpus can reveal exact keyword strings for SQL searches. Fixed-size semantic results do not establish completeness or counts; use SQL for those.
 
-Use the guidance in [references/database.md](references/database.md) for multilingual metadata, split words, editorial supplements and translation coverage. When routes disagree, investigate discrepancies that could affect your answer. An exploratory search does not require resolving every unmatched hit.
+The search-database skill covers how to retrieve data, including multilingual metadata, split words and translation coverage. The database-content-interpretation skill covers what retrieved data can establish, including editorial supplements, uncertain dates and the limits of counts. When routes disagree, investigate discrepancies that could affect your answer. An exploratory search does not require resolving every unmatched hit.
 
 You may delegate independent sub-questions or routes with `task`. Ask for the findings, exact consequential queries, relevant result counts, Trismegistos ids and limitations so you can integrate their evidence without rerunning the work.
 
@@ -65,14 +65,14 @@ You may delegate independent sub-questions or routes with `task`. Ask for the fi
 
 Criticism should follow the claim: examine the aspects that could change the conclusion, not every possible property of every document. A metadata inventory does not require the same close reading as an argument about a restored phrase.
 
-- **Date:** precise, approximate or palaeographic? Read `date_text` alongside `certainty`, `precision` and any alternative dates in `orig_dates` when chronology matters.
-- **Place:** written, found, acquired, sent or received where? Check `place_type` and any uncertainty in the full place name when provenance matters.
-- **Reading:** preserved wording or editorial restoration? Check the decisive passage in `xml_content` when an argument depends on its wording; plain `text` hides supplements and uncertainty. Note fragmentary evidence.
+- **Date:** precise, approximate or palaeographic? Check its notation, certainty and alternatives when chronology matters.
+- **Place:** written, found, acquired, sent or received where? Check the place's relation to the document and any doubt marked on it when provenance matters.
+- **Reading:** preserved wording or editorial restoration? Check the decisive passage's editorial markup when an argument depends on its wording. Note fragmentary evidence.
 - **Orthography and semantics:** could spelling variants affect retrieval? Does the term have the same meaning in this period and context? Compare relevant parallels where useful.
 - **Author and purpose:** what can this genre and writer reasonably establish? A petition, official report or private letter has its own purposes; a statement in it is not automatically proof that the event occurred as described.
 - **Edition and research history:** check available revisions or duplicate editions where they affect a reading, attribution or count. Do not imply you have checked scholarship the database does not provide.
 
-Use [../reasoning-about-uncertainty/SKILL.md](../reasoning-about-uncertainty/SKILL.md) when interpreting uncertain dates, places, readings or meanings. Explain uncertainties that affect the answer; if competing readings lead to the same conclusion, a brief note is enough.
+Use the database-content-interpretation skill ([../database-content-interpretation/SKILL.md](../database-content-interpretation/SKILL.md)) to read dates, places, readings and their markers, and [../reasoning-about-uncertainty/SKILL.md](../reasoning-about-uncertainty/SKILL.md) to weigh how their uncertainty affects a claim. Explain uncertainties that affect the answer; if competing readings lead to the same conclusion, a brief note is enough.
 
 ## Grounding and interpretation
 
@@ -153,7 +153,7 @@ Interpretation file: /scratchpad/interpretation-<topic>.md
 
 For a count or complete list, retain the included ids and enough inclusion/exclusion decisions to audit the total. For an exploratory investigation, record the documents actually used and important exclusions; you need not adjudicate every search hit.
 
-Build source entries using [references/database.md](references/database.md). Batch verification is fine, and previously retrieved SQL evidence can serve as verification without another identical query. Missing metadata is a limitation to report, not something to fill from memory or a reason to withhold an otherwise useful source.
+Fill each source entry from the database. Build the link to the papyri.info edition from the document's DDbDP or DCLP id, or to Trismegistos if it has neither. Batch verification is fine, and previously retrieved SQL evidence can serve as verification without another identical query. Missing metadata is a limitation to report, not something to fill from memory or a reason to withhold an otherwise useful source.
 
 ## Ready for report writing
 
