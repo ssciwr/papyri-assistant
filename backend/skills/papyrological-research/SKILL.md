@@ -36,7 +36,7 @@ These are recurring activities, not gates. You can search, interpret, check and 
 ### Choosing depth and stopping
 
 - **Examples or exploratory questions:** inspect a useful selection and state how it was chosen. Do not imply that it represents the whole corpus or exhausts the relevant documents.
-- **Counts or complete lists:** define the inclusion criteria and counting unit, check duplicates, and investigate likely omissions. Independent search routes are especially useful here; where feasible, cross-check coverage with another route and explain remaining blind spots.
+- **Counts or complete lists:** define the inclusion criteria and counting unit, and investigate likely omissions. Independent search routes are especially useful here; where feasible, cross-check coverage with another route and explain remaining blind spots.
 - **Broad historical or semantic claims:** look for comparable documents, exceptions and rival explanations. A few examples may establish that something occurred without establishing how common it was.
 
 Stop when you can give a supported answer at the requested depth and further searches are unlikely to change it materially. Also stop or narrow the claim when the database cannot resolve a remaining uncertainty. Record what was not checked rather than continuing indefinitely or treating a partial answer as a failure. If the user gives a time or scope limit, prioritize the conclusions most important to them.
@@ -59,20 +59,20 @@ You may delegate independent sub-questions or routes with `task`. Ask for the fi
 
 Criticism should follow the claim: examine the aspects that could change the conclusion, not every possible property of every document. A metadata inventory does not require the same close reading as an argument about a restored phrase.
 
-- **Date:** precise, approximate or palaeographic? Check its notation, certainty and alternatives when chronology matters.
-- **Place:** written, found, acquired, sent or received where? Check the place's relation to the document and any doubt marked on it when provenance matters.
-- **Reading:** preserved wording or editorial restoration? Check the decisive passage's editorial markup when an argument depends on its wording. Note fragmentary evidence.
+- **Date:** precise, approximate or palaeographic?
+- **Place:** written, found, acquired, sent or received where?
+- **Reading:** preserved wording or editorial restoration? Note fragmentary evidence.
 - **Orthography and semantics:** could spelling variants affect retrieval? Does the term have the same meaning in this period and context? Compare relevant parallels where useful.
 - **Author and purpose:** what can this genre and writer reasonably establish? A petition, official report or private letter has its own purposes; a statement in it is not automatically proof that the event occurred as described.
-- **Edition and research history:** check available revisions or duplicate editions where they affect a reading, attribution or count. Do not imply you have checked scholarship the database does not provide.
+- **Edition and research history:** check available revisions where they affect a reading or attribution. Do not imply you have checked scholarship the database does not provide.
 
-Use the database-content-interpretation skill ([../database-content-interpretation/SKILL.md](../database-content-interpretation/SKILL.md)) to read dates, places, readings and their markers, and [../reasoning-about-uncertainty/SKILL.md](../reasoning-about-uncertainty/SKILL.md) to weigh how their uncertainty affects a claim. Explain uncertainties that affect the answer; if competing readings lead to the same conclusion, a brief note is enough.
+Use [../reasoning-about-uncertainty/SKILL.md](../reasoning-about-uncertainty/SKILL.md) to weigh how uncertainty in these features affects a claim. Explain uncertainties that affect the answer; if competing readings lead to the same conclusion, a brief note is enough.
 
 ## Grounding and interpretation
 
 Database findings, counts, quotations and document-specific assertions must be supported by retrieved evidence. Read that evidence as the database-content-interpretation skill ([../database-content-interpretation/SKILL.md](../database-content-interpretation/SKILL.md)) describes. Verify documents with `query_sql` before citing them; semantic hits and remembered examples are leads, not verified sources. Never invent a source, quotation, figure or bibliographic detail.
 
-Use your linguistic and historical knowledge to choose searches, understand documents and propose explanations. It may appear in the record as explicitly labeled background knowledge or an interpretive hypothesis, with its basis and uncertainty. Distinguish it from what the retrieved documents establish. Where a conclusion depends on such an assumption, seek supporting evidence or qualify the conclusion; labeling it is not a substitute for verification.
+Use your linguistic and historical knowledge to choose searches, understand documents and propose explanations. It may appear in the record as explicitly labeled background knowledge or an interpretive hypothesis, with its basis and uncertainty. Where a conclusion depends on such an assumption, seek supporting evidence or qualify the conclusion; labeling it is not a substitute for verification.
 
 If the question needs unavailable external scholarship, identify that limit and the kind of source needed. You can still offer a qualified database-based answer rather than withholding all interpretation.
 
@@ -80,7 +80,7 @@ If the question needs unavailable external scholarship, identify that limit and 
 
 Use the interpretation's axes to notice relevant reasoning risks, not as a checklist for unrelated checks:
 
-- **Temporal:** a date compatible with an event does not itself link the document to that event. Uneven survival and database coverage limit comparisons of frequencies. If frequency matters, consider an appropriate corpus baseline; even normalized shares are not automatically historical rates.
+- **Temporal:** a date compatible with an event does not itself link the document to that event. Uneven survival limits comparisons of frequencies. If frequency matters, consider an appropriate corpus baseline; even normalized shares are not automatically historical rates.
 - **Material:** distinguish records, texts and physical objects. Define the unit in a count and account for duplicates. The database is not all published papyrology; avoid treating a database total as the total preserved. Uncertain classifications may also prevent a count from being a firm lower bound.
 - **Relational:** shared names do not establish identity, and co-occurrence does not establish a relationship. Look for contextual links.
 - **Semantic:** meanings change across periods and genres. Conventional formulae may show how something was represented rather than what actually happened.
