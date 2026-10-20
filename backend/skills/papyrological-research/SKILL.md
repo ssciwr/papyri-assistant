@@ -51,13 +51,7 @@ The interpretation is a starting point, not a fixed frame. If the evidence expos
 
 ## Search routes
 
-Each route has different strengths and blind spots. Agreement helps, but shared metadata or editorial assumptions can make apparently different searches less independent than they seem.
-
-- **Metadata (`query_sql`)**: keywords, titles, dates, places and editions. Useful for lists and counts within the recorded classifications; misses documents tagged or described differently.
-- **Text (`query_sql` on `transcriptions`)**: original-language words and formulae. Useful for wording and context; misses variants, damaged passages and documents without transcriptions.
-- **Semantic (`similarity_search`, `mmr_search`)**: useful for discovering candidates, parallels and vocabulary. The `keywords` corpus can reveal exact keyword strings for SQL searches. Fixed-size semantic results do not establish completeness or counts; use SQL for those.
-
-The search-database skill covers how to retrieve data, including multilingual metadata, split words and translation coverage. The database-content-interpretation skill covers what retrieved data can establish, including editorial supplements, uncertain dates and the limits of counts. When routes disagree, investigate discrepancies that could affect your answer. An exploratory search does not require resolving every unmatched hit.
+The search-database skill describes the routes and how to use them. For research, agreement between routes helps, but shared metadata or editorial assumptions can make apparently different searches less independent than they seem. When routes disagree, investigate discrepancies that could affect your answer. An exploratory search does not require resolving every unmatched hit.
 
 You may delegate independent sub-questions or routes with `task`. Ask for the findings, exact consequential queries, relevant result counts, Trismegistos ids and limitations so you can integrate their evidence without rerunning the work.
 
@@ -76,7 +70,7 @@ Use the database-content-interpretation skill ([../database-content-interpretati
 
 ## Grounding and interpretation
 
-Database findings, counts, quotations and document-specific assertions must be supported by retrieved evidence. Verify documents with `query_sql` before citing them; semantic hits and remembered examples are leads, not verified sources. Never invent a source, quotation, figure or bibliographic detail.
+Database findings, counts, quotations and document-specific assertions must be supported by retrieved evidence. Read that evidence as the database-content-interpretation skill ([../database-content-interpretation/SKILL.md](../database-content-interpretation/SKILL.md)) describes. Verify documents with `query_sql` before citing them; semantic hits and remembered examples are leads, not verified sources. Never invent a source, quotation, figure or bibliographic detail.
 
 Use your linguistic and historical knowledge to choose searches, understand documents and propose explanations. It may appear in the record as explicitly labeled background knowledge or an interpretive hypothesis, with its basis and uncertainty. Distinguish it from what the retrieved documents establish. Where a conclusion depends on such an assumption, seek supporting evidence or qualify the conclusion; labeling it is not a substitute for verification.
 
