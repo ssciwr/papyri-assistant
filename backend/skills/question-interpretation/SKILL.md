@@ -1,6 +1,6 @@
 ---
 name: question-interpretation
-description: Interpret a user's papyrological question and write the interpretation that the research starts from. Use whenever the user asks a complex question requiring deep, grounded argumentation from sources to answer.
+description: Use only when the user asks a complex question requiring deep, grounded argumentation from sources to answer or when the user asks specifically about a scientific answer. Interpret a user's papyrological question and write the interpretation that the research starts from.
 license: MIT
 metadata:
   version: 0.1
