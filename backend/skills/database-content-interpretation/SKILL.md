@@ -1,15 +1,15 @@
 ---
 name: database-content-interpretation
-description: Interpretation guidelines for data retrieved from the database. Use whenever data has been retrieved from the postgres- (plus pgvector) databse and the results need to be assessed with respect to an input question.
+description: Interpretation guidelines for data retrieved from the database. Use whenever data has been retrieved from the postgres- (plus pgvector) database and the results need to be assessed with respect to an input question.
 license: MIT
 metadata:
-  version: 0.2
+  version: 0.3
 allowed-tools: write_todos, read_file, write_file, edit_file, grep
 ---
 
 # Interpreting database content
 
-How to read what the database returns: what its records, notations and markers say, and what they do not say. How to query is covered by the search-database skill ([../search-database/SKILL.md](../search-database/SKILL.md)). How to weigh uncertainty in a conclusion is covered by the reasoning-about-uncertainty skill ([../reasoning-about-uncertainty/SKILL.md](../reasoning-about-uncertainty/SKILL.md)).
+This skill describes how to read what the database returns: what its records, notations and markers say, and what they do not say. How to query is covered by the search-database skill ([../search-database/SKILL.md](../search-database/SKILL.md)). How to weigh uncertainty in a conclusion is covered by the reasoning-about-uncertainty skill ([../reasoning-about-uncertainty/SKILL.md](../reasoning-about-uncertainty/SKILL.md)).
 
 The table semantics from `get_table_semantics` give the meaning of each field and its values. Read them first. This skill adds only what they do not show.
 
@@ -19,14 +19,14 @@ A document missing from the results may not be in the database, or may be descri
 
 ## Where the data comes from
 
-Readings, dates, places and classifications are editors' and cataloguers' assessments, not observations of the papyrus. Attribute them as such, but do not distrust them only because they are mediated. The markers described below show how an assessment was reached and how firm the editor considered it.
+Readings, dates, places and classifications are editors' and cataloguers' assessments, not observations of the papyrus. Attribute them as such, but do not distrust them only because they are mediated.
 
 ## Empty fields and missing rows
 
 An empty field means the source records nothing, not that the property is lacking. A missing row means the same:
 
-- **No date row.** The source may give a date without machine-readable bounds, or no date at all. The document is not thereby undated.
-- **No place row.** The source usually gives the origin as unknown (`unbekannt`). The document is not thereby without a place.
+- **No date row.** The source may give a date without machine-readable bounds, or we may have no date at all to attribute.
+- **No place row.** The source usually gives the origin as unknown (`unbekannt`).
 
 ## Papyri and texts
 
@@ -41,8 +41,8 @@ A text edited more than once can appear under two Trismegistos ids. Compare the 
 The plain text prints restorations of lost text and expanded abbreviations as if they were written, prints unclear letters as if certain, drops gaps (joining the words on either side) and marks of doubt, and gives the editor's regularized or corrected spelling and the accepted reading of a corrected passage. Letters the scribe omitted and the editor supplied are left out, and text the scribe deleted may still appear. Where an argument turns on wording, read the XML of that passage.
 
 ### Markers in the XML
-
-These markers record editorial interventions and the condition of the text. They are not confidence grades: a restoration may be well constrained, and the absence of a doubt marker does not guarantee certainty.
+XML ttranscriptions are stored in Epidoc format, an xml version of the Leiden annotation system.
+These markers record editorial interventions and the condition of the text. They are not confidence grades: a restoration may be well constrained, and the absence of a doubt marker does not fully guarantee certainty.
 
 | Marker | Meaning |
 |---|---|
@@ -61,7 +61,7 @@ These markers record editorial interventions and the condition of the text. They
 
 ### Translations
 
-A translation is a modern interpretation of the text. Wording a claim depends on is checked in the original text.
+A translation is a modern interpretation of the text. Wording a claim depends on must be checked in the original text.
 
 ## Dates
 
@@ -91,7 +91,7 @@ How tight a date is depends on its basis, which the date text and the edition us
 
 ## Places
 
-- **One origin statement per document.** The full place name is the source's origin statement, repeated on every place row of the document. A `(?)` in it, as in `Pathyris (?)`, marks the whole attribution as doubtful, not one row.
+- **One origin statement per document.** The full place name is the source's known or inferred place of origin, repeated on every place row of the document. A `(?)` in it, as in `Pathyris (?)`, marks the whole attribution as doubtful, not one row.
 - **One place at several levels.** Rows for a settlement, its nome and its region describe one place, not several.
 - **Relation matters.** A findspot or a place of purchase is not necessarily where the text was written.
 
