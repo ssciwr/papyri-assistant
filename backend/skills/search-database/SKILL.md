@@ -3,7 +3,7 @@ name: search-database
 description: Search the postgres-database (tabular and vector via pgvector) for information about papyri using the available database tools. Use whenever a database search is asked for or you deem a database search necessary to answer a user question.
 license: MIT
 metadata:
-  version: 0.1
+  version: 0.2
 allowed-tools: write_todos, task, list_sql_tables, get_table_semantics, query_sql, similarity_search, mmr_search
 ---
 
@@ -46,7 +46,7 @@ Count distinct documents, not joined rows, and state what you counted.
 
 ### Texts
 
-- **Plain text or XML.** Transcriptions are stored in Epidoc format, an xml version of the Leiden annotation system. Retrieve the XML when the editorial markup is needed: supplements, regularized and original spellings, gaps and unclear letters.
+- **Plain text or XML.** Retrieve the XML when the editorial markup is needed: supplements, regularized and original spellings, gaps and unclear letters.
 - **Words run over line breaks.** Remove whitespace before matching a formula.
 - **Accents and spelling count.** Search each accent and spelling variant, or match a short stem that avoids the variable part.
 
@@ -86,7 +86,7 @@ The `keywords` corpus embeds every distinct keyword string in the database, so y
 - A returned string may combine a keyword with its qualifier. Check the keyword table's semantics for how to match it.
 - A document usually has several keywords, so a compound concept such as "grain receipt" may be two keywords on one document.
 - Match the collected strings exactly in SQL, and add stem matches to catch variants the embeddings missed.
-- MMR search can be particularly useful here because of the diversity of keywords for a single concept.
+- MMR search can be particularly useful for keywords because of the diversity of keywords for a single concept.
 
 ## Report what you did
 
