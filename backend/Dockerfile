@@ -4,12 +4,13 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1
 
-# make directories for the agent to work with
-RUN mkdir /app/workspace
-RUN mkdir /app/memory
+# make directories for the agent to work with; each is a backend route in the
+# agent config (WORKSPACE_DIR, MEMORY_DIR, LOGS_DIR)
+RUN mkdir -p /app/workspace /app/memory /app/logs
 
-# copy skills
-COPY backend/skills /app/
+# copy skills to SKILL_DIR's default. COPY puts a directory's contents at the
+# destination, so the destination has to name the skills directory itself.
+COPY backend/skills /app/skills
 
 # copy and install package
 COPY backend/pyproject.toml backend/pyproject.toml
