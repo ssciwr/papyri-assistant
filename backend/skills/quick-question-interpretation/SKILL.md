@@ -15,7 +15,7 @@ A quick question is answered directly from a few lookups, without a research rep
 
 Input: the user's question, and anything the conversation already says about it.
 
-Output: the interpreted question, written into your context as the block under "Interpreted question" below, before the first search. There is no interpretation file. Answer from the block with the search-database skill ([../search-database/SKILL.md](../search-database/SKILL.md)). If you delegate the search with `task`, pass the block as the task description.
+Output: the interpreted question, written into your context as the block under "Interpreted question" below, before the first search. There is no interpretation file. Answer from the block with the search-database skill ([../search-database/SKILL.md](../search-database/SKILL.md)). If you delegate the search with `task`, pass the block as the task description. Review the drafted answer with the answer-review skill ([../answer-review/SKILL.md](../answer-review/SKILL.md)) before it goes to the user.
 
 ## Possible topical axes
 
