@@ -9,8 +9,8 @@ In what way is witchcraft attested in the papyri, and how does it relate to reli
 
 # Decisions
 - Asked whether "attested" means documents that are themselves acts of witchcraft (spells, amulets, curses), or also documents that mention witchcraft or accuse someone of it. The user wants both.
-- Asked what "witchcraft" should cover, since it is a modern term. The user: everything the papyri treat as magic, including spells, amulets, curses, love spells and divination.
-- Asked where the boundary between pre-Christian and Christian times should lie. The user: not fixed in advance; it should come out of the documents.
+- Asked what "witchcraft" should cover, since it is a modern term. User's answer: everything the papyri treat as magic, including spells, amulets, curses, love spells and divination.
+- Asked where the boundary between pre-Christian and Christian times should lie. User's answer: not fixed in advance; it should be established from the analysis of the documents.
 - Final form: How is witchcraft attested in the papyri, as practice and as mentioned, and how does its relation to religion differ between pre-Christian and Christian times?
 
 # Terms
