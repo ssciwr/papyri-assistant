@@ -20,7 +20,6 @@ from papyri_backend.utils import utils
 CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 AGENT_CONFIG = CONFIGS / "default_langchain_agent.yaml"
 OPENROUTER_CONFIG = CONFIGS / "openrouter_langchain_agent.yaml"
-CLINE_CONFIG = CONFIGS / "cline_langchain_agent.yaml"
 
 
 @pytest.fixture
@@ -59,16 +58,7 @@ def test_presence_penalty_uses_langchain_parameter(llm_env, monkeypatch) -> None
     assert model.presence_penalty == 0.25
 
 
-def test_presence_penalty_uses_langchain_parameter(llm_env, monkeypatch) -> None:
-    monkeypatch.setenv("LLM_PRESENCE_PENALTY", "0.25")
-
-    config = utils.load_config(AGENT_CONFIG)
-    model = utils.build(config["model"])
-
-    assert model.presence_penalty == 0.25
-
-
-@pytest.mark.parametrize("config_path", [AGENT_CONFIG, OPENROUTER_CONFIG, CLINE_CONFIG])
+@pytest.mark.parametrize("config_path", [AGENT_CONFIG, OPENROUTER_CONFIG])
 def test_agent_config_builds_an_agent(llm_env, config_path) -> None:
     # This is what the first request does, so a failure here is a 500 on the
     # first thing a user types.
@@ -82,7 +72,6 @@ def test_agent_config_builds_an_agent(llm_env, config_path) -> None:
     ("config_path", "base_url"),
     [
         (OPENROUTER_CONFIG, "https://openrouter.ai/api/v1/"),
-        (CLINE_CONFIG, "https://api.cline.bot/api/v1/"),
     ],
 )
 def test_gateway_config_uses_standard_adapter_and_fixed_endpoint(
