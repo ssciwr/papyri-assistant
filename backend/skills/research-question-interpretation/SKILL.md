@@ -1,10 +1,10 @@
 ---
-name: question-interpretation
+name: research-question-interpretation
 description: Use only when the user asks a complex question requiring deep, grounded argumentation from sources to answer, or when the user asks specifically for a scientifically grounded answer. Interpret a user's papyrological question and write out the interpretation that the research starts from.
 license: MIT
 metadata:
   version: 0.2
-allowed-tools: read_file, write_file, edit_file
+allowed-tools: read_file, write_file, edit_file, task
 ---
 
 # Question interpretation
