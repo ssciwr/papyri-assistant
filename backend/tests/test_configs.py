@@ -59,6 +59,15 @@ def test_presence_penalty_uses_langchain_parameter(llm_env, monkeypatch) -> None
     assert model.presence_penalty == 0.25
 
 
+def test_presence_penalty_uses_langchain_parameter(llm_env, monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PRESENCE_PENALTY", "0.25")
+
+    config = utils.load_config(AGENT_CONFIG)
+    model = utils.build(config["model"])
+
+    assert model.presence_penalty == 0.25
+
+
 @pytest.mark.parametrize("config_path", [AGENT_CONFIG, OPENROUTER_CONFIG, CLINE_CONFIG])
 def test_agent_config_builds_an_agent(llm_env, config_path) -> None:
     # This is what the first request does, so a failure here is a 500 on the
