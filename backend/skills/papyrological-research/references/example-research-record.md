@@ -1,6 +1,6 @@
 # Example research record
 
-This record starts from the example interpretation file `example-decian-libelli.md` in the question-interpretation skill, and the good report in the report-writing skill was written from it. It meets every acceptance criterion. Read it for how a record is built: the open points of the interpretation established from evidence first, steps recorded with their sub-question and exact queries, every candidate decided, a search for counter-evidence that changes the answer, and a sub-question that the database cannot answer, recorded as a gap instead of being filled from memory.
+This record starts from the example interpretation file `example-decian-libelli.md` in the question-interpretation skill, and the good report ([good-report-example.md](good-report-example.md)) was written from it. It meets every acceptance criterion. Read it for how a record is built: the open points of the interpretation established from evidence first, steps recorded with their sub-question and exact queries, every candidate decided, a search for counter-evidence that changes the answer, and a sub-question that the database cannot answer, recorded as a gap instead of being filled from memory.
 
 Its counts come from the database as it was on 8 October 2026. If a user asks this question, do the research again: the database may have changed.
 
