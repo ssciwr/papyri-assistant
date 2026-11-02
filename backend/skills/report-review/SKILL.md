@@ -3,7 +3,7 @@ name: report-review
 description: Review a written research report and decide whether it goes to the user. Use once a report has been written.
 license: MIT
 metadata:
-  version: 0.1
+  version: 0.2
 allowed-tools: write_todos, read_file, write_file, grep, list_sql_tables, get_table_semantics, query_sql, similarity_search, mmr_search
 ---
 
@@ -11,11 +11,13 @@ allowed-tools: write_todos, read_file, write_file, grep, list_sql_tables, get_ta
 
 The review decides whether a report may go to the user. It checks the report against the acceptance criteria of report writing and research, follows its arguments, checks the integrity of the research, cross-checks the load-bearing claims against the database, and acts as the report's devil's advocate.
 
-Read the report with fresh eyes, as a reader who has not seen the research. The user will have only the report, so judge only what the report and the database show. If you took part in the research, set aside what you remember of it.
+Read the report with fresh eyes, as a reader who has not seen the research. The user will have only the report, so judge only what the report and the evidence from the database listed there. If you took part in the research, set aside what you remember of it.
+
+A report may go through at most four review-revision cycles before the answer is flagged as incomplete and handed over to the user.
 
 ## Issues
 
-An **issue** is anything that affects whether the answer is correct, grounded, complete or followable. The review reports issues and nothing else. For each issue it names what must change and why; the researcher or the report writer makes the change.
+An **issue** is anything that affects whether the answer is correct, grounded, complete or followable. The review reports issues and nothing else. For each issue it names what must change and why; the researcher makes the change.
 
 ## Input and output
 
@@ -31,8 +33,6 @@ Output: the review file `/scratchpad/review-<topic>-<round>.md`, and one of thre
 | `revise` | issues remain, in rounds 1–4 | nothing yet; the report goes back for revision |
 | `rejected` | issues remain in round 5, after four revisions | the rejection reason, then the full text of the report, then the unresolved issues |
 
-The paths are for the agents that pass the work on. The user works in a chat and sees only what is written into it, so what reaches the user is always the content of the files.
-
 ## Workflow
 
 1. **Read the report and the earlier review files,** and plan the checks with `write_todos`.
@@ -43,10 +43,11 @@ The paths are for the agents that pass the work on. The user works in a chat and
 6. **Cross-check the load-bearing claims** (see "Cross-checks").
 7. **Play devil's advocate** (see "Devil's advocate").
 8. **Decide the verdict** by the table under "Input and output", and write the review file.
+9. **Hand over** to the user if the report is accepted, and to the researcher agent if the verdict is `revise`. If the verdict is rejected, add a message at the start of the report that flags it as incomplete and names the issues that remain.
 
 ## Report criteria
 
-Check the report against the acceptance criteria of the report-writing skill ([../report-writing/SKILL.md](../report-writing/SKILL.md)) and the readiness criteria of the papyrological-research skill ([../papyrological-research/SKILL.md](../papyrological-research/SKILL.md)) that affect the report. Judge whether the checks are appropriate to the conclusions: coverage checks for counts or complete lists, plausible alternatives for load-bearing interpretations, and source criticism of the features each claim depends on. Do not require a fixed number of search routes, a separate falsification search for every claim, or irrelevant source checks. A missing check is an issue when it leaves a material risk to the answer unresolved, not merely because it was omitted.
+Check the report against the acceptance criteria ofthe papyrological-research skill ([../papyrological-research/SKILL.md](../papyrological-research/SKILL.md)) that affect the report. Judge whether the checks are appropriate to the conclusions: coverage checks for counts or complete lists, plausible alternatives for load-bearing interpretations, and source criticism of the features each claim depends on. Do not require a fixed number of search routes, a separate falsification search for every claim, or irrelevant source checks. A missing check is an issue when it leaves a material risk to an answer's viability and reproduciblity unresolved, not merely because it was omitted.
 
 These criteria check that the report contains what it must. The checks below test whether what it contains holds.
 
@@ -56,8 +57,8 @@ For every argument, check:
 
 - **Steps**: does the reasoning lead from the evidence to the claim with every step stated?
 - **Strength**: is the claim no stronger than its evidence, and does its stated certainty match the evidence and the uncertainties named?
-- **Circularity**: does the evidence already presuppose the claim, for example criteria derived from the very documents they are then used to select?
-- **Synthesis**: does each claim on the main question build on the claims it names, and does the summary say no more than the findings?
+- **Circularity**: does the evidence already presuppose the claim, for example criteria derived from the very documents they are then used to select them?
+- **Synthesis**: does the main question build on the claims it names, and does the summary say no more than the findings?
 - **Repeatability**: is each step of the methods described well enough to be repeated?
 
 ## Research integrity
@@ -65,11 +66,11 @@ For every argument, check:
 - **Grounding**: database findings, figures, quotations and document-specific assertions have retrieved evidence behind them. Background knowledge and interpretive hypotheses are clearly labeled and not presented as verified sources or database findings. If a conclusion depends on an unverified premise, check that it is appropriately qualified; labeling alone does not establish the premise.
 - **Whole evidence**: the evidence against a claim is given wherever the methods found any, and every document is presented with what it shows against the claim as well as for it.
 - **Counting**: counts are of distinct papyri, or say that they count records or texts.
-- **Faithful interpretation**: the interpretation is faithful to the user's question, and the answer answers the question as interpreted.
+- **Faithful interpretation**: the interpretation is faithful to the user's question, and the answer addresses the question as interpreted.
 
 ## Cross-checks
 
-Cross-checks are targeted: they cover the three kinds below, and the rest of the research is trusted to its described methods. Record every cross-check in the review file with its query and result.
+Re-run only the three kinds of check below. Judge the rest of the research by the methods the report describes, without repeating it. Record every cross-check in the review file with its query and result.
 
 - **Sources**: verify with one query over all cited Trismegistos ids that every cited document exists, and compare its date, place and edition with its reference entry.
 - **Load-bearing claims**: every claim on the main question, and every claim whose failure would change the answer, such as the claim that carries a count. Repeat or reconstruct at least one step behind each, and compare the result with the report.
