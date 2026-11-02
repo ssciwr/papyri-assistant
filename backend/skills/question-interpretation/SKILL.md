@@ -1,30 +1,31 @@
 ---
 name: question-interpretation
-description: Use only when the user asks a complex question requiring deep, grounded argumentation from sources to answer or when the user asks specifically about a scientific answer. Interpret a user's papyrological question and write the interpretation that the research starts from.
+description: Use only when the user asks a complex question requiring deep, grounded argumentation from sources to answer, or when the user asks specifically for a scientifically grounded answer. Interpret a user's papyrological question and write out the interpretation that the research starts from.
 license: MIT
 metadata:
-  version: 0.1
+  version: 0.2
 allowed-tools: read_file, write_file, edit_file
 ---
 
 # Question interpretation
 
-Interpretation extracts the structure of the user's question and along which topical axes evidence must be gathered to answer it. The research starts from this interpretation. If the question is misread, the research finds a well-argued answer to the wrong question, so the interpretation must be explicit enough for the researcher agent and the user to check it.
+Interpretation extracts the structure of the user's question and along which topical axes along which evidence must be gathered to answer it. The research starts from this interpretation.
 
 Interpretation does not answer the question. It defines the individual elements and sub questions the user's input contains and therefore what steps should be taken to answer it.
+
+If the question is misread, the research finds a well-argued answer to the wrong question, so the interpretation must be explicit enough for the researcher agent and the user to check it.
 
 ## Input and output
 
 Input: the user's question, and anything the conversation already says about it.
 
-Output: an interpretation file at `/scratchpad/interpretation-<topic>.md`, in the structure under "Interpretation file" below. `<topic>` is a short slug, e.g. `decian-libelli`. The research record uses the same slug.
-
+Output: an interpretation file at `/scratchpad/interpretation-<topic>.md`, in the structure under "Interpretation file" below. `<topic>` is a short slug, e.g. `decian-libelli`.
 Once the file meets the acceptance criteria, research the question with the papyrological-research skill, or pass the file's path to the agent that does the research.
 
 
 ## Possible topical axes
-
-Most questions involve more than one. These axes are not all there can be, but they are commonly involved, and you may be able to find others. Each axis is a dimension along which evidence is gathered.
+Each axis is a dimension along which evidence is gathered.
+Most questions involve more than one. These axes are not all there can be, but they are commonly involved, and you may be able to find others.
 
 - **Temporal (diachronic):** change over time. How a practice, term, institution or frequency developed; sequences of events; before and after. A single date or a date window is not temporal; it is an observation (material).
 - **Material (observational):** the observable properties of documents and objects: date, place of writing or finding, material, format, handwriting, language, document type. Also which documents exist and how many.
@@ -34,28 +35,28 @@ Most questions involve more than one. These axes are not all there can be, but t
 
 ## What question interpretation must cover
 - **Question analsyis**
-  - **Identification of alternative readings:** If the question is unclear or can be answered in multiple ways, ask the user to clarfiy before any work is done. Do not just interpret the question yourself and run with it without clarifying ambiguous meaning first.
+  - **Identification of alternative readings:** If the question is unclear or can be answered in multiple ways, ask the user to clarfiy before any work is done. Do not just interpret the question yourself without clarifying ambiguous meaning first.
   - **Identify the key terms:** the terms the answer depends on. For each, record what the question and the conversation fix about it, and what is open.
-  - **Identification of question scope:** what the question and the conversation fix about period, region, document types, languages, historical context.  Mark everything else as open. Do not make a-priori assumptions about facts, but always ask for clarification
-  - **Identification of question topics**. What kind of topics are involved (see 'Possible topical axes'), and what kind of evidence should be investigated to answer them. A question can possibly be split into sub questions pertaining to indiviual topical axes or elements.
+  - **Identification of question scope:** what the question and the conversation fix about period, region, document types, languages, historical context. Mark everything else as open which the research must uncover. Do not make a-priori assumptions about facts.
+  - **Identification of question topics**. What kind of topics are involved (see 'Possible topical axes'), and what kind of evidence should be gathered to answer them. A question can possibly be split into sub questions pertaining to indiviual topical axes or a subset of the whole.
 - **Question synthesis.** Say how the answers to subquestions and evidence for involved topics are expected to combine into the answer.
 
 ### Examples
 
 Two worked interpretation files show the format:
 
-- [references/example-decian-libelli.md](references/example-decian-libelli.md): one primary axis. The research record and the good report in the other skills were written from it.
+- [references/example-decian-libelli.md](references/example-decian-libelli.md): one primary axis, straight forward to answer.
 - [references/example-witchcraft.md](references/example-witchcraft.md): three primary axes, with a modern category and a division into periods that the research must first establish.
 
 ## Interpretation file
 
-Write the file in this structure. The research copies it into the research record.
+Write the question interpretation file in this structure. The research copies it into the research record.
 
 ```markdown
-# Question
+# User question
 <the user's question, verbatim>
 
-# Decisions
+# Clarifications
 <the user's answer to any clarification questions, and the final form of the question>
 
 # Terms
