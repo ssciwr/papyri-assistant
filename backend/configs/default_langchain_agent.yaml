@@ -1,6 +1,6 @@
 name: defaultAgent
 
-model:
+model: &llm
   type: papyri_backend.chat_models.MaybeVLLMChatOpenAI
   kwargs:
     model: ${LLM_MODEL}
@@ -36,6 +36,14 @@ tools:
 middleware:
   - type: langchain.agents.middleware.TodoListMiddleware
     kwargs: {}
+
+  - type: deepagents.RubricMiddleware
+    kwargs:
+      model: *llm # could consider using a differen one for this if we have a remotely useful inference provider
+      system_prompt: "You are an expert in papyrology and a meticulous scientist in the field. You know how papyrological arguments from sources are structured, what they rely on and how they need to be cited and interpreted. You know how lines of reasoning in the field are structured and are experienced in grading and reviewing papyrological work. "
+      tools: [] # this can contain deterministic checks against the trace.
+      max_iterations: 5
+    rubric:
 
 # Skill directories, as paths in the agent's backend (see the "/skills/" route).
 # deepagents builds the SkillsMiddleware from these with the agent's own backend,

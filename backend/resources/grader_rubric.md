@@ -1,0 +1,6 @@
+- All scientific claims in the answer are supported by evidence from the database with links, built from the document's DDbDP or DCLP id, or from its Trismegistos id if it has neither, as retrieved from the database, or a statement that no database-derived evidence is available but that other sources of knowledge have been used and which?
+- All scientific claims in the answer are presented in such a way that their sustance can be reconstructed from the cited evidence.
+- All evidence presented supports the respective claim, does not overstate or understate this evidence.
+- All documents cited as evidence are available in the database under the mentioned ids and contain the content cited.
+- The answer is worded clearly, scientifically and factually.
+- The answer refers to the user's question and does not contain additional information unrelated to the problem field, neither does it answer a narrower or different version of the question stated.
