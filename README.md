@@ -52,7 +52,44 @@ YAML `type` values are imported and constructed at runtime. `${VARIABLE}` and `$
 Retriever model and table configuration is not YAML. At startup the backend reads
 all three rows from `embedding_table_metadata`, validates the physical
 tables, and constructs the allowlisted provider integration described there.
-Agent configuration remains in `default_langchain_agent.yaml`.
+Agent configuration defaults to `default_langchain_agent.yaml`.
+
+### OpenRouter
+
+`backend/configs/openrouter_langchain_agent.yaml` keeps the same tools and
+permissions, using OpenRouter's Chat Completions endpoint. Choose a model that
+supports tool calling; no model is preselected.
+
+For Docker Compose, set these in `.env`:
+
+```dotenv
+AGENT_CONFIG=/app/backend/configs/openrouter_langchain_agent.yaml
+LLM_API_KEY=your-openrouter-key
+LLM_MODEL=provider/model-name
+```
+
+For a host process, set `AGENT_CONFIG` to the absolute path of
+`backend/configs/openrouter_langchain_agent.yaml` instead. This config does not
+use `LLM_API_URL`. Model-specific sampling/reasoning settings and context limits
+are intentionally left unset; configure them once you choose a model.
+
+### Cline
+
+`backend/configs/cline_langchain_agent.yaml` uses Cline's OpenAI-compatible
+API at `https://api.cline.bot/api/v1`, with the same tools and permissions.
+For Docker Compose, set:
+
+```dotenv
+AGENT_CONFIG=/app/backend/configs/cline_langchain_agent.yaml
+LLM_API_KEY=your-cline-api-key
+LLM_MODEL=your-cline-model-id
+```
+
+For a host process, use the absolute local config path instead. Choose a
+model available to your Cline account that supports tool calling. This config
+ignores `LLM_API_URL` and leaves model-specific parameters unset. Free models
+may require Cline client identity headers and may not be available to this
+external client; this config does not impersonate the Cline extension.
 
 ### Compose defaults
 

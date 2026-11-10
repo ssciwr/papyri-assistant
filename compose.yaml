@@ -57,10 +57,13 @@ services:
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       VLLM_API_KEY: ${VLLM_API_KEY:-}
       EMBEDDING_ENDPOINT_VLLM: ${EMBEDDING_ENDPOINT_VLLM:-}
-      AGENT_CONFIG:  /app/backend/configs/default_langchain_agent.yaml
+      AGENT_CONFIG: ${AGENT_CONFIG:-/app/backend/configs/default_langchain_agent.yaml}
       PYTHONPATH: /app/backend/src
     volumes:
       - ./backend/src:/app/backend/src
+      # skills are edited during development; read-only, as the agent may not
+      # rewrite them
+      - ./backend/skills:/app/skills:ro
       - huggingface-cache:/root/.cache/huggingface
     ports:
       - "127.0.0.1:3001:3001"
