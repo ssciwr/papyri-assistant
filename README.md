@@ -73,24 +73,6 @@ For a host process, set `AGENT_CONFIG` to the absolute path of
 use `LLM_API_URL`. Model-specific sampling/reasoning settings and context limits
 are intentionally left unset; configure them once you choose a model.
 
-### Cline
-
-`backend/configs/cline_langchain_agent.yaml` uses Cline's OpenAI-compatible
-API at `https://api.cline.bot/api/v1`, with the same tools and permissions.
-For Docker Compose, set:
-
-```dotenv
-AGENT_CONFIG=/app/backend/configs/cline_langchain_agent.yaml
-LLM_API_KEY=your-cline-api-key
-LLM_MODEL=your-cline-model-id
-```
-
-For a host process, use the absolute local config path instead. Choose a
-model available to your Cline account that supports tool calling. This config
-ignores `LLM_API_URL` and leaves model-specific parameters unset. Free models
-may require Cline client identity headers and may not be available to this
-external client; this config does not impersonate the Cline extension.
-
 ### Compose defaults
 
 - Both stacks discover transcriptions, translations, and keywords from the same database contract.
