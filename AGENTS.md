@@ -122,7 +122,7 @@ def top_level_entry_point() -> Response:
         return internal_error_response()
 ```
 
-- no changes to the code are made without a corresponding test of the new or changed functionality
+- no changes to the code are made without a corresponding test of the new or changed functionality, but the removal of legacy functionality needs not be tested.
 - all public methods and classes should have google style docstrings
 - all private methods or classes should have at least freeform docstrings
 - documentation is considered part of the code base and must be maintained alongside it.
