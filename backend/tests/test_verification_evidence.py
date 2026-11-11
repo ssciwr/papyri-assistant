@@ -5,10 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from papyri_backend.verification.evidence import (
-    collect_evidence,
-    format_evidence,
-)
+from papyri_backend.verification.evidence import evidence_blocks
 
 
 def ai(tool_calls: list[dict[str, Any]]) -> Any:
@@ -32,14 +29,12 @@ def test_a_tool_result_is_rejoined_with_its_call() -> None:
         result("c1", "tm_id\n8823"),
     ]
 
-    items = collect_evidence(messages)
+    blocks = evidence_blocks(messages, max_chars=1000)
 
-    assert len(items) == 1
-    assert items[0].tool == "query_sql"
-    assert items[0].args == {"query": "SELECT 1"}
-    assert items[0].content == "tm_id\n8823"
+    assert blocks == ["query_sql(query=SELECT 1)\ntm_id\n8823"]
 
-def test_truncation_is_per_item_and_flagged() -> None:
+
+def test_truncation_is_per_result_and_flagged() -> None:
     messages = [
         ai([{"id": "c1", "name": "query_sql", "args": {}}]),
         result("c1", "x" * 50),
@@ -47,39 +42,19 @@ def test_truncation_is_per_item_and_flagged() -> None:
         result("c2", "short"),
     ]
 
-    items = collect_evidence(messages, max_chars=10)
+    blocks = evidence_blocks(messages, max_chars=10)
 
-    assert items[0].content == "x" * 10
-    assert items[0].truncated is True
-    assert items[1].content == "short"
-    assert items[1].truncated is False
+    assert blocks[0] == (
+        "query_sql()  -- truncated, showing the first part only\n" + "x" * 10
+    )
+    assert blocks[1] == "query_sql()\nshort"
+
 
 def test_messages_without_tools_produce_no_evidence() -> None:
-    assert collect_evidence([human("hello")]) == []
+    assert evidence_blocks([human("hello")], max_chars=1000) == []
 
 
-def test_format_evidence_labels_each_block_with_its_call() -> None:
-    items = collect_evidence(
-        [
-            ai([{"id": "c1", "name": "query_sql", "args": {"query": "SELECT 1"}}]),
-            result("c1", "tm_id\n8823"),
-        ]
-    )
+def test_a_result_whose_call_was_summarized_away_is_still_evidence() -> None:
+    blocks = evidence_blocks([result("gone", "8823")], max_chars=1000)
 
-    rendered = format_evidence(items)
-
-    assert rendered.startswith("[E1] query_sql(query=SELECT 1)")
-    assert "8823" in rendered
-
-
-def test_format_evidence_says_when_a_result_was_truncated() -> None:
-    items = collect_evidence(
-        [ai([{"id": "c1", "name": "query_sql", "args": {}}]), result("c1", "y" * 50)],
-        max_chars=10,
-    )
-
-    assert "truncated" in format_evidence(items)
-
-
-def test_format_evidence_states_plainly_when_nothing_was_retrieved() -> None:
-    assert "No tools were called" in format_evidence([])
+    assert blocks == ["unknown()\n8823"]

@@ -1,14 +1,14 @@
 """The gate between the agent's answer and the user.
 
 One model pass, no tools, over the question, the answer and everything the
-agent retrieved this turn. It answers five closed questions about text already
-in front of it -- a much easier task than answering the original question --
-and can send the answer back exactly once.
+agent retrieved this turn. It answers closed questions about text already in
+front of it -- a much easier task than answering the original question -- and
+can send the answer back for a rewrite up to ``max_retries`` times.
 
 The reviewer's prompt lives in the agent config beside the agent's own, so it
-can be tuned without touching Python. Until the design's deterministic tier 1
-checks exist, that prompt is the only thing enforcing that the agent consulted
-the corpus at all.
+can be tuned without touching Python. There is no check in code that the agent
+consulted the corpus at all: an answer that makes factual claims without any
+tool calls is caught only by a rule in that prompt.
 """
 
 from __future__ import annotations
@@ -19,24 +19,9 @@ from langchain.agents.middleware import AgentMiddleware, AgentState, hook_config
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.constants import TAG_NOSTREAM
 
-from .evidence import collect_evidence
-from .request import build_review_request
-from .verdict import parse_verdict
-
-CRITIQUE_NAME = "reviewer"
-"""Stamped on injected critiques so they are not mistaken for the question."""
-
-_CRITIQUE_TEMPLATE = """A reviewer read your answer against the evidence you
-retrieved and rejected it:
-
-{problems}
-
-Rewrite your answer to address every point. Retrieve more evidence first if you
-need it. Do not defend the previous answer.
-
-Write the rewrite for the user, who has not seen the review: do not mention the
-reviewer, the points, or what you changed. Where a claim is not supported,
-remove it rather than restating it more narrowly."""
+from .evidence import evidence_blocks
+from .request import REQUEST_PLACEHOLDERS, build_review_request
+from .verdict import ReviewVerdict, read_verdict
 
 
 class ReviewState(AgentState):
@@ -61,21 +46,76 @@ class ReviewerMiddleware(AgentMiddleware):
         *,
         model: Any,
         system_prompt: str,
-        max_retries: int = 1,
-        max_evidence_chars: int = 4000,
+        request_template: str,
+        evidence_start: str,
+        evidence_end: str,
+        critique_template: str,
+        critique_name: str,
+        unspecified_problem: str,
+        max_evidence_chars: int,
+        max_retries: int,
     ) -> None:
         """Build the gate.
 
         Args:
             model: The chat model the reviewer runs on
             system_prompt: The reviewer's instructions, from the agent config.
-            max_retries: How many times a rejected answer may be sent back. The
-                design specifies one.
-            max_evidence_chars: Longest tool result shown per evidence item.
+            request_template: The layout of the message the reviewer judges,
+                with ``{question}``, ``{answer}`` and ``{evidence}``
+                placeholders, from the agent config.
+            evidence_start: The line that opens the evidence fence.
+            evidence_end: The line that closes the evidence fence.
+            critique_template: The message the agent gets when its answer
+                is rejected, with a ``{problems}`` placeholder, from the
+                agent config.
+            critique_name: The name stamped on the critique message, so it
+                is not mistaken for the user's question, from the agent
+                config.
+            unspecified_problem: The problem given to a rejection that names
+                none, so the agent still has something to fix, from the agent
+                config.
+            max_evidence_chars: Longest tool result shown per evidence
+                item, from the agent config.
+            max_retries: How many times a rejected answer may be sent back for
+                a rewrite, from the agent config.
+
+        Raises:
+            ValueError: If a template lacks a placeholder, a marker, the
+                critique name or the unspecified problem is empty, the evidence limit is not positive, or
+                max_retries is negative, so a broken config fails at startup,
+                not mid-turn.
         """
+        missing = [p for p in REQUEST_PLACEHOLDERS if p not in request_template]
+        if missing:
+            raise ValueError(f"request_template is missing {', '.join(missing)}")
+        if not evidence_start.strip() or not evidence_end.strip():
+            raise ValueError("evidence_start and evidence_end must not be empty")
+        if "{problems}" not in critique_template:
+            raise ValueError("critique_template is missing {problems}")
+        if not critique_name.strip():
+            raise ValueError("critique_name must not be empty")
+        if not unspecified_problem.strip():
+            raise ValueError("unspecified_problem must not be empty")
+        if max_evidence_chars < 1:
+            raise ValueError("max_evidence_chars must be at least 1")
+        if max_retries < 0:
+            raise ValueError("max_retries must not be negative")
         super().__init__()
         self.model = model
+        # The server returns the verdict in this shape, so it never has to be
+        # parsed out of free text. include_raw keeps a reply that does not fit
+        # from raising: it comes back with parsed=None and is reported as
+        # unverified, while an unreachable endpoint still raises below.
+        self.reviewer = model.with_structured_output(
+            ReviewVerdict, method="json_schema", include_raw=True
+        )
         self.system_prompt = system_prompt
+        self.request_template = request_template
+        self.evidence_start = evidence_start
+        self.evidence_end = evidence_end
+        self.critique_template = critique_template
+        self.critique_name = critique_name
+        self.unspecified_problem = unspecified_problem
         self.max_retries = max_retries
         self.max_evidence_chars = max_evidence_chars
 
@@ -105,19 +145,25 @@ class ReviewerMiddleware(AgentMiddleware):
         if not answer:
             return None
 
-        items = collect_evidence(messages, max_chars=self.max_evidence_chars)
+        question, turn = _current_turn(messages, self.critique_name)
+        evidence = evidence_blocks(turn, max_chars=self.max_evidence_chars)
         retries = state.get("review_retries", 0)
         report: dict[str, Any] = {
             "retries": retries,
-            "evidence_count": len(items),
+            "evidence_count": len(evidence),
             "model": getattr(self.model, "model_name", None),
         }
 
         request = build_review_request(
-            question=_question(messages), answer=answer, items=items
+            template=self.request_template,
+            evidence_start=self.evidence_start,
+            evidence_end=self.evidence_end,
+            question=question,
+            answer=answer,
+            evidence=evidence,
         )
         try:
-            reply = self.model.invoke(
+            reply = self.reviewer.invoke(
                 [SystemMessage(self.system_prompt), HumanMessage(request)],
                 # Keep this call out of the graph's message stream. Without the
                 # tag the reviewer's own reply is streamed as a model message
@@ -140,7 +186,7 @@ class ReviewerMiddleware(AgentMiddleware):
                 }
             }
 
-        verdict = parse_verdict(_text_of(reply))
+        verdict = read_verdict(reply, unspecified_problem=self.unspecified_problem)
         # An unparseable reply is neither a pass nor a fail.
         if not verdict.parsed:
             decision = "unverified"
@@ -164,27 +210,30 @@ class ReviewerMiddleware(AgentMiddleware):
             "review_retries": retries + 1,
             "messages": [
                 HumanMessage(
-                    _CRITIQUE_TEMPLATE.format(problems=critique), name=CRITIQUE_NAME
+                    self.critique_template.format(problems=critique),
+                    name=self.critique_name,
                 )
             ],
             "jump_to": "model",
         }
 
 
-def _question(messages: list[Any]) -> str:
-    """Return the user's question, ignoring any critique this gate injected.
+def _current_turn(messages: list[Any], critique_name: str) -> tuple[str, list[Any]]:
+    """Return the user's latest question and the messages that followed it.
 
-    After a retry the newest human message is the critique, so reviewing
-    against the last human message would review the answer against the
-    reviewer's own complaint instead of against what the user asked.
+    The message list holds the whole conversation, but only this turn's tool
+    results are evidence for this turn's answer. A critique this gate injected
+    is skipped when looking for the question: after a retry the newest human
+    message is the critique, and the evidence gathered before it still counts.
     """
-    for message in reversed(messages):
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
         if getattr(message, "type", None) != "human":
             continue
-        if getattr(message, "name", None) == CRITIQUE_NAME:
+        if getattr(message, "name", None) == critique_name:
             continue
-        return _text_of(message)
-    return ""
+        return _text_of(message), messages[index + 1 :]
+    return "", messages
 
 
 def _text_of(message: Any) -> str:

@@ -1,81 +1,53 @@
-"""Recover what the agent actually retrieved, so a reviewer can check against it.
+"""Render what the agent retrieved, so a reviewer can check the answer against it.
 
-Today the evidence is read back out of the message list, by joining each
-``ToolMessage`` to the tool call that produced it. When
-``EvidenceLedgerMiddleware`` lands this module is the only thing that changes:
-``collect_evidence`` reads ``state["evidence"]`` instead and returns the same
-``EvidenceItem`` list, so the prompt, the contract, the middleware and their
-tests are unaffected. That is the reason this indirection exists at all.
+The reviewer needs each tool result next to the call that produced it: check 5
+of its prompt compares the call's arguments with the claim the result is used
+for. A ``ToolMessage`` carries only the result, so it is joined here to the
+tool call on the ``AIMessage`` that requested it. Each result is cut to a
+maximum length, so one very large result cannot crowd the others out of the
+reviewer's single model call.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Any
 
-_DEFAULT_MAX_CHARS = 4000 #can be changed based on more testing - just my prediction after some testing
-_UNKNOWN_TOOL = "unknown" #name of the tool call can get missing after memory compression of the conversation
+_UNKNOWN_TOOL = "unknown"  # summarization can drop the call while keeping its result
 
 
-@dataclass(frozen=True)
-class EvidenceItem:
-    """One tool result, with the call that produced it.
-
-    Shaped after the ledger record in the design so that the ledger can supply
-    these directly later.
-    """
-
-    evidence_id: str
-    tool: str
-    args: dict[str, Any]
-    content: str
-    truncated: bool
-
-
-def collect_evidence(
-    messages: Sequence[Any], *, max_chars: int = _DEFAULT_MAX_CHARS
-) -> list[EvidenceItem]:
-    """Pair every tool result in a message list with the call that produced it.
+def evidence_blocks(messages: Sequence[Any], *, max_chars: int) -> list[str]:
+    """Render each tool result in ``messages`` with the call that produced it.
 
     Args:
-        messages: The conversation so far, oldest first.
-        max_chars: Longest result text kept per item. Truncation is per item so
-            that one very large result cannot crowd the others out of the
-            reviewer's single model call.
+        messages: The messages to take evidence from, oldest first.
+        max_chars: Longest result text kept per block.
 
     Returns:
-        One item per tool result, numbered ``E1``, ``E2``, ... in call order.
+        One text block per tool result, in call order, headed by the tool name
+        and its arguments.
     """
-    # A ToolMessage carries the result and a tool_call_id, but not the tool's
-    # name or arguments -- those are on the AIMessage that requested it
     calls: dict[str, dict[str, Any]] = {}
-    items: list[EvidenceItem] = []
+    blocks: list[str] = []
 
     for message in messages:
         for call in getattr(message, "tool_calls", None) or []:
-            call_id = call.get("id")
-            if call_id is not None:
-                calls[call_id] = call
+            if call.get("id") is not None:
+                calls[call["id"]] = call
 
         call_id = getattr(message, "tool_call_id", None)
         if call_id is None:
             continue
 
-        # Summarization can drop the requesting AIMessage while keeping itsresult.
         call = calls.get(call_id, {})
+        args = ", ".join(f"{k}={v}" for k, v in (call.get("args") or {}).items())
+        header = f"{call.get('name') or _UNKNOWN_TOOL}({args})"
         content = _text_of(message)
-        items.append(
-            EvidenceItem(
-                evidence_id=f"E{len(items) + 1}",
-                tool=call.get("name") or _UNKNOWN_TOOL,
-                args=call.get("args") or {},
-                content=content[:max_chars],
-                truncated=len(content) > max_chars,
-            )
-        )
+        if len(content) > max_chars:
+            header += "  -- truncated, showing the first part only"
+        blocks.append(f"{header}\n{content[:max_chars]}")
 
-    return items
+    return blocks
 
 
 def _text_of(message: Any) -> str:
@@ -85,28 +57,3 @@ def _text_of(message: Any) -> str:
         return text
     content = getattr(message, "content", "")
     return content if isinstance(content, str) else str(content)
-
-
-def format_evidence(items: Sequence[EvidenceItem]) -> str:
-    """Render evidence for the reviewer's prompt.
-
-    Args:
-        items: The evidence, in call order.
-
-    Returns:
-        One labelled block per item, or a sentence stating that no tool was
-        called -- which the reviewer needs to be able to distinguish from a
-        missing section
-    """
-    if not items:
-        return "No tools were called during this turn, so there is no evidence."
-
-    blocks = []
-    for item in items:
-        args = ", ".join(f"{key}={value}" for key, value in item.args.items())
-        header = f"[{item.evidence_id}] {item.tool}({args})"
-        if item.truncated:
-            header = f"{header}  -- truncated, showing the first part only"
-        blocks.append(f"{header}\n{item.content}")
-
-    return "\n\n".join(blocks)

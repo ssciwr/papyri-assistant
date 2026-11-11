@@ -1,22 +1,27 @@
-"""Read a small model's reply as a pass/fail verdict.
+"""The reviewer's verdict, returned as structured output rather than parsed text.
 
-The reviewer is asked for one JSON object and nothing else. This module assumes
-it will not always comply, and recovers what it can without the middleware
-having to care.
+The reviewer model is called with ``ReviewVerdict`` as its output schema, so
+the model server returns the verdict as data and nothing has to be read out of
+free text.
 
-Three outcomes, not two: an unreadable reply is neither a pass nor a fail. It is
-``parsed=False``, and the middleware reports that as "unverified" rather than
-letting a formatting slip read as an endorsement.
+Three outcomes, not two: a reply that does not fit the schema is neither a pass
+nor a fail. It is ``parsed=False``, and the middleware reports that as
+"unverified" rather than letting a formatting slip read as an endorsement.
 """
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass
+from typing import Any, Literal
 
-_THINK_CLOSE = re.compile(r"</\s*think\s*>", re.IGNORECASE)
-_UNSPECIFIED_PROBLEM = "The reviewer rejected the answer without naming a problem."
+from pydantic import BaseModel, Field
+
+
+class ReviewVerdict(BaseModel):
+    """The reviewer's verdict on one answer."""
+
+    verdict: Literal["pass", "fail"]
+    problems: list[str] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -25,7 +30,8 @@ class Verdict:
 
     Attributes:
         passed: Whether the answer may be released.
-        problems: Sentences the reviewer objected to, empty on a pass.
+        problems: Claims the reviewer objected to, each quoted with the
+            sentence that contains it; empty on a pass.
         parsed: Whether the reply was understood at all. ``False`` means the
             pass is a default rather than a judgement, and the report must say
             so rather than calling it a pass.
@@ -36,66 +42,31 @@ class Verdict:
     parsed: bool
 
 
-def parse_verdict(text: str) -> Verdict:
-    """Read a verdict out of the reviewer's reply.
+def read_verdict(result: dict[str, Any], *, unspecified_problem: str) -> Verdict:
+    """Turn the reviewer's structured output into a verdict.
 
     Args:
-        text: The reviewer model's raw reply.
+        result: What ``with_structured_output(ReviewVerdict, include_raw=True)``
+            returns: ``"parsed"`` holds a ``ReviewVerdict``, or ``None`` when
+            the reply did not fit the schema.
+        unspecified_problem: The problem given to a rejection that names
+            none, from the agent config.
 
     Returns:
-        The verdict. An unreadable reply yields ``passed=True, parsed=False``: a
-        reviewer that cannot format its answer has told us something about
-        itself, not about the answer, and holding a chat answer hostage to that
-        would be worse than releasing it with the malfunction recorded.
+        The verdict. A reply that did not fit yields ``passed=True,
+        parsed=False``: a reviewer that cannot format its answer has told us
+        something about itself, not about the answer, and holding a chat answer
+        hostage to that would be worse than releasing it with the malfunction
+        recorded.
     """
-    payload = _last_json_object(_without_reasoning(text))
-    if payload is None:
+    reply = result.get("parsed")
+    if not isinstance(reply, ReviewVerdict):
         return Verdict(passed=True, problems=(), parsed=False)
 
-    raw_verdict = payload.get("verdict")
-    if not isinstance(raw_verdict, str):
-        return Verdict(passed=True, problems=(), parsed=False)
-
-    passed = raw_verdict.strip().lower() != "fail"
-    problems = tuple(
-        problem.strip()
-        for problem in payload.get("problems") or []
-        if isinstance(problem, str) and problem.strip()
-    )
-
+    problems = tuple(problem.strip() for problem in reply.problems if problem.strip())
     # A rejection with nothing to fix would send the agent round the loop with
     # no guidance, so it is given a generic problem rather than becoming a pass.
-    if not passed and not problems:
-        problems = (_UNSPECIFIED_PROBLEM,)
+    if reply.verdict == "fail" and not problems:
+        problems = (unspecified_problem,)
 
-    return Verdict(passed=passed, problems=problems, parsed=True)
-
-
-def _without_reasoning(text: str) -> str:
-    """Drop everything up to and including a closing think tag.
-
-    The opening tag is not required: Qwen's chat template consumes it, which is
-    why ``default_langchain_agent.yaml`` sets ``inline_reasoning: true``.
-    """
-    matches = list(_THINK_CLOSE.finditer(text))
-    return text[matches[-1].end() :] if matches else text
-
-
-def _last_json_object(text: str) -> dict | None:
-    """Return the last JSON object in a string, or None if there is none.
-
-    The last rather than the first, because a model that reasons about the
-    requested format often shows an example of it before answering in it.
-    """
-    decoder = json.JSONDecoder()
-    found: dict | None = None
-    index = 0
-    while (start := text.find("{", index)) >= 0:
-        try:
-            payload, index = decoder.raw_decode(text, start)
-        except ValueError:
-            index = start + 1
-            continue
-        if isinstance(payload, dict):
-            found = payload
-    return found
+    return Verdict(passed=reply.verdict == "pass", problems=problems, parsed=True)
