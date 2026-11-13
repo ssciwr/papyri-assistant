@@ -13,6 +13,7 @@ from typing import Any, cast
 from conftest import FakeGraph, FakeStreamMessage, FakeToolCalls
 
 from papyri_backend.langchain_agent import LangChainAgent
+from papyri_backend.verification import format_report
 
 
 def agent_over(
@@ -20,7 +21,7 @@ def agent_over(
 ) -> LangChainAgent:
     """An adapter shell over a fake graph, optionally carrying a report.
 
-    ``FakeGraph``'s state fake exposes only ``interrupts``; ``_review_report``
+    ``FakeGraph``'s state fake exposes only ``interrupts``; ``review_report``
     reads ``values``, so the state is replaced with one carrying both.
     """
     agent = object.__new__(LangChainAgent)
@@ -97,21 +98,26 @@ def test_the_internal_answer_event_is_never_forwarded() -> None:
     assert "answer" not in kinds
 
 
-def test_the_report_is_carried_to_the_browser_before_done() -> None:
+def test_the_report_is_shown_as_reasoning_before_done() -> None:
     report = {"verdict": "pass", "retries": 0, "evidence_count": 2, "parsed": True}
     graph = FakeGraph([FakeStreamMessage(text="Two documents do.")])
 
     events = events_of(agent_over(graph, report))
-    kinds = [event["type"] for event in events]
 
-    assert events[kinds.index("verification")]["verification"] == report
-    assert kinds.index("verification") < kinds.index("done")
+    shown = [
+        index
+        for index, event in enumerate(events)
+        if event["type"] == "reasoning" and event["content"] == format_report(report)
+    ]
+    done = next(i for i, event in enumerate(events) if event["type"] == "done")
+    assert len(shown) == 1
+    assert shown[0] < done
 
 
 def test_no_report_is_emitted_when_no_reviewer_is_configured() -> None:
     # default_langchain_agent.yaml has no reviewer, so the event is optional.
     graph = FakeGraph([FakeStreamMessage(text="Two documents do.")])
 
-    kinds = [event["type"] for event in events_of(agent_over(graph))]
+    events = events_of(agent_over(graph))
 
-    assert "verification" not in kinds
+    assert not any("Verification" in event.get("content", "") for event in events)

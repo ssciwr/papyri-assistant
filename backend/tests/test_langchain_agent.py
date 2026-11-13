@@ -334,7 +334,7 @@ def test_prefilled_reasoning_never_streams_as_answer_text(user_message) -> None:
     )
 
 
-def test_raw_message_events_preserve_reasoning_and_text_deltas(user_message) -> None:
+def test_raw_message_events_stream_reasoning_deltas_but_hold_back_the_answer(user_message) -> None:
     class RawMessage:
         tool_calls = FakeToolCalls()
 

@@ -184,17 +184,6 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
                 },
                 {"type": "text", "content": "Hello"},
                 {
-                    "type": "verification",
-                    "verification": {
-                        "verdict": "pass",
-                        "problems": [],
-                        "retries": 0,
-                        "evidence_count": 2,
-                        "parsed": True,
-                        "model": "test-model",
-                    },
-                },
-                {
                     "type": "done",
                     "interrupt": None,
                     "usage": {
@@ -224,7 +213,6 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
             "interrupt": None,
             "usage": None,
             "model_usage": None,
-            "verification": None,
         },
         {
             "type": "usage",
@@ -244,7 +232,6 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
                 "cached_input_tokens": 6,
                 "context_window": 100,
             },
-            "verification": None,
         },
         {
             "type": "text",
@@ -252,23 +239,6 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
             "interrupt": None,
             "usage": None,
             "model_usage": None,
-            "verification": None,
-        },
-        {
-            "type": "verification",
-            "content": "",
-            "interrupt": None,
-            "usage": None,
-            "model_usage": None,
-            "verification": {
-                "verdict": "pass",
-                "problems": [],
-                "retries": 0,
-                "evidence_count": 2,
-                "parsed": True,
-                "model": "test-model",
-                "error": None,
-            },
         },
         {
             "type": "done",
@@ -281,7 +251,6 @@ def test_chat_route(client: TestClient, monkeypatch) -> None:
                 "cached_input_tokens": 6,
             },
             "model_usage": None,
-            "verification": None,
         },
     ]
 

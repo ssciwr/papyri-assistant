@@ -7,41 +7,13 @@ import {
 } from "@assistant-ui/react";
 
 import { requestDecision, type PendingInterrupt } from "./decisionGate";
-import { type ModelUsage, type TokenUsage } from "./tokenUsage";
+import {
+  formatTokenCheckpoint,
+  type ModelUsage,
+  type TokenUsage
+} from "./tokenUsage";
 
 export const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
-
-type VerificationReport = {
-  verdict: string;
-  problems?: string[];
-  retries?: number;
-  evidence_count?: number;
-  parsed?: boolean | null;
-  model?: string | null;
-  error?: string | null;
-};
-
-// Shown in the reasoning trace rather than in a panel of its own. The report is
-// worth seeing on every turn, and a dedicated surface for it is a design
-// question this change does not need to answer.
-const formatVerification = (report: VerificationReport): string => {
-  const lines = [`verdict: ${report.verdict}`];
-  lines.push(`evidence items: ${report.evidence_count ?? 0}`);
-  lines.push(`rewrites: ${report.retries ?? 0}`);
-  if (report.parsed === false) {
-    lines.push(
-      "the reviewer's reply could not be read, so this answer is unverified"
-    );
-  }
-  if (report.error) {
-    lines.push(`reviewer unavailable: ${report.error}`);
-  }
-  for (const problem of report.problems ?? []) {
-    lines.push(`- ${problem}`);
-  }
-  return `\n\n\`\`\`\nVerification\n${lines.join("\n")}\n\`\`\`\n\n`;
-};
-
 type ChatStreamEvent =
   | {
       type: "text" | "reasoning" | "replace";
@@ -51,10 +23,6 @@ type ChatStreamEvent =
       type: "usage";
       usage: TokenUsage;
       model_usage: ModelUsage;
-    }
-  | {
-      type: "verification";
-      verification: VerificationReport;
     }
   | {
       type: "done";
@@ -102,7 +70,6 @@ const modelAdapter: ChatModelAdapter = {
           event.type !== "reasoning" &&
           event.type !== "replace" &&
           event.type !== "usage" &&
-          event.type !== "verification" &&
           event.type !== "done"
         ) {
           throw new Error("missing stream fields");
@@ -153,10 +120,12 @@ const modelAdapter: ChatModelAdapter = {
           break;
         case "usage":
           usage = event.usage;
+          reasoning += formatTokenCheckpoint(
+            event.model_usage,
+            modelUsage.at(-1),
+            event.usage
+          );
           modelUsage.push(event.model_usage);
-          break;
-        case "verification":
-          reasoning += formatVerification(event.verification);
           break;
         case "done":
           text = text.trim();
@@ -164,6 +133,11 @@ const modelAdapter: ChatModelAdapter = {
           completed = true;
           usage = event.usage ?? usage;
           if (modelUsage.length === 0 && event.model_usage) {
+            reasoning += formatTokenCheckpoint(
+              event.model_usage,
+              undefined,
+              event.usage ?? event.model_usage
+            );
             modelUsage.push(event.model_usage);
           }
           if (event.interrupt?.actions.length) {

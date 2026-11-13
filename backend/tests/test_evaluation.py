@@ -2,7 +2,7 @@
 
 What is covered here is the measurement itself: reading a turn's events, and the
 one piece of summary arithmetic whose rule is not obvious from reading it. The
-rest of the module is exercised by running ``scripts/evaluate_grounding.py``,
+rest of the module is exercised by running ``evaluation/evaluate_grounding.py``,
 where a mistake is visible in the output rather than silent.
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from papyri_backend.evaluation import run_question, summarise
+from harness import run_question, summarise
 
 LINK = "https://papyri.info/editions/p.zen.pestm/54"
 
@@ -18,13 +18,19 @@ LINK = "https://papyri.info/editions/p.zen.pestm/54"
 class FakeAgent:
     """An agent that replays a fixed event stream for one turn."""
 
-    def __init__(self, events: list[dict[str, Any]]) -> None:
+    def __init__(
+        self, events: list[dict[str, Any]], report: dict[str, Any] | None = None
+    ) -> None:
         self.events = events
+        self.report = report
         self.asked: list[str] = []
 
     def stream_single_turn(self, message: dict[str, Any]) -> list[dict[str, Any]]:
         self.asked.append(message["content"][0]["text"])
         return self.events
+
+    def review_report(self) -> dict[str, Any] | None:
+        return self.report
 
 
 def result(**overrides: Any) -> dict[str, Any]:
@@ -45,18 +51,15 @@ def test_a_turn_is_read_into_answer_links_and_verdict() -> None:
         [
             {"type": "reasoning", "content": "Searching."},
             {"type": "text", "content": f"TM 1885 is a lease: [TM 1885]({LINK})."},
-            {
-                "type": "verification",
-                "verification": {
-                    "verdict": "pass",
-                    "parsed": True,
-                    "retries": 0,
-                    "evidence_count": 2,
-                    "problems": [],
-                },
-            },
             {"type": "done", "interrupt": None},
-        ]
+        ],
+        report={
+            "verdict": "pass",
+            "parsed": True,
+            "retries": 0,
+            "evidence_count": 2,
+            "problems": [],
+        },
     )
 
     outcome = run_question(agent, "Find a lease.")

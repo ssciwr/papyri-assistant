@@ -14,6 +14,7 @@ from langgraph.types import Command
 
 from .exceptions import InvalidDecision, StaleDecision
 from .utils import utils
+from .verification import format_report
 
 # Models that reason inline mark the trace as ordinary answer text instead of
 # emitting reasoning events. The tags are matched leniently because whitespace
@@ -212,7 +213,7 @@ class LangChainAgent:
         interrupts = self.agent.get_state(self._config).interrupts
         return interrupts[0] if interrupts else None
 
-    def _review_report(self) -> dict[str, Any] | None:
+    def review_report(self) -> dict[str, Any] | None:
         """Return this turn's verification report, if a reviewer wrote one.
 
         Read from the checkpointer rather than from the stream, for the same
@@ -602,9 +603,9 @@ class LangChainAgent:
         elif not answer.strip() and not failed:
             yield {"type": "text", "content": _EMPTY_ANSWER_MESSAGE}
 
-        report = self._review_report()
+        report = self.review_report()
         if report is not None:
-            yield {"type": "verification", "verification": report}
+            yield {"type": "reasoning", "content": format_report(report)}
 
         done: dict[str, Any] = {"type": "done", "interrupt": interrupt_view}
         if usage is not None:
